@@ -1,0 +1,8 @@
+# This template ships closed to crawlers.
+#
+# It is a placeholder storefront with no real products, and having Google index
+# "Placeholder Item 01" before launch is worse than not being indexed at all.
+# Remove this file (and the `robots` metadata in src/app/layout.tsx) when the
+# real catalogue goes live.
+User-agent: *
+Disallow: /
