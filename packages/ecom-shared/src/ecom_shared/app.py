@@ -24,7 +24,7 @@ from fastapi.responses import JSONResponse
 from ecom_shared.config import ServiceSettings
 from ecom_shared.db import Database
 from ecom_shared.errors import register_exception_handlers
-from ecom_shared.logging import configure_logging, get_logger
+from ecom_shared.logging import configure_logging, get_logger, silence_uvicorn_access_log
 from ecom_shared.middleware import (
     AccessLogMiddleware,
     RequestContextMiddleware,
@@ -92,6 +92,10 @@ def create_service_app(
         it to the process lifetime instead, and guarantees it is drained
         cleanly on shutdown so in-flight queries are not severed.
         """
+        # Runs after uvicorn has installed its own logging config, which is
+        # the only point at which this reliably takes effect.
+        silence_uvicorn_access_log()
+
         log.info(
             "service_starting",
             version=SERVICE_VERSION,

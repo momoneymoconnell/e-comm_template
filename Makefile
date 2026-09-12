@@ -88,7 +88,7 @@ shell: ## Open a shell in a service container, e.g. make shell SVC=orders
 
 .PHONY: psql
 psql: ## Open psql as the database owner
-	$(COMPOSE) exec postgres psql -U $$(grep '^POSTGRES_USER=' .env | cut -d= -f2) -d $$(grep '^POSTGRES_DB=' .env | cut -d= -f2)
+	$(COMPOSE) exec -e PGPASSWORD="$$(grep '^POSTGRES_PASSWORD=' .env | cut -d= -f2)" postgres psql -U $$(grep '^POSTGRES_USER=' .env | cut -d= -f2) -d $$(grep '^POSTGRES_DB=' .env | cut -d= -f2)
 
 # -----------------------------------------------------------------------------
 # Development (runs on your machine, not in Docker)

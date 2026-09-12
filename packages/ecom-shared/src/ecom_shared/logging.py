@@ -99,9 +99,11 @@ def configure_logging(service_name: str, level: str = "INFO", *, json_output: bo
     root.setLevel(level)
 
     # uvicorn installs its own handlers; strip them so lines are not duplicated.
-    for noisy in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    for noisy in ("uvicorn", "uvicorn.error"):
         logging.getLogger(noisy).handlers = []
         logging.getLogger(noisy).propagate = True
+
+    silence_uvicorn_access_log()
 
     # SQLAlchemy's INFO level echoes every statement. Useful when debugging,
     # overwhelming otherwise — so it only speaks up at DEBUG.
@@ -110,6 +112,27 @@ def configure_logging(service_name: str, level: str = "INFO", *, json_output: bo
     )
 
     structlog.contextvars.bind_contextvars(service=service_name)
+
+
+def silence_uvicorn_access_log() -> None:
+    """Switch off uvicorn's own access logger.
+
+    `AccessLogMiddleware` already emits one structured line per request, with
+    timing and the request ID; uvicorn's logger prints a second, less useful
+    line for the same request.
+
+    This must be called **after** uvicorn has configured logging, not just
+    during `configure_logging()`. uvicorn imports the application module first
+    and applies its own `dictConfig` afterwards, so anything set at import time
+    is simply overwritten. `create_service_app()` therefore also calls this
+    from the lifespan startup, which runs late enough to stick — and does so
+    regardless of whether whoever launched the process remembered
+    `--no-access-log`.
+    """
+    access_logger = logging.getLogger("uvicorn.access")
+    access_logger.handlers = []
+    access_logger.propagate = False
+    access_logger.disabled = True
 
 
 def get_logger(name: str | None = None) -> structlog.stdlib.BoundLogger:

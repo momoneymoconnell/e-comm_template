@@ -122,7 +122,9 @@ class Database:
             database_url: Async DSN (``postgresql+asyncpg://...``).
             schema: The schema to pin as the connection ``search_path``, so
                 unqualified table names resolve inside this service's own
-                schema and nowhere else.
+                schema. ``public`` is appended for the shared extension types
+                (citext, pgcrypto) but the service still has no grant on any
+                other service's schema, so isolation is unaffected.
             echo: Log every SQL statement. Debugging only — it is extremely
                 noisy and can print parameter values.
             pool_size: Connections kept open per process. Postgres defaults to
@@ -145,7 +147,7 @@ class Database:
             pool_pre_ping=True,
             connect_args={
                 "server_settings": {
-                    "search_path": schema,
+                    "search_path": f"{schema}, public",
                     # Tags connections in pg_stat_activity, so `SELECT * FROM
                     # pg_stat_activity` tells you which service is running that
                     # slow query.
