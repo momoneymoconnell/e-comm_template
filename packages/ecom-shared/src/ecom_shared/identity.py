@@ -198,3 +198,49 @@ async def require_admin(
 CurrentUser = Annotated[CallerIdentity, Depends(require_user)]
 AdminUser = Annotated[CallerIdentity, Depends(require_admin)]
 MaybeUser = Annotated[CallerIdentity | None, Depends(optional_user)]
+
+
+async def require_service(request: Request) -> str:
+    """Dependency: require a valid internal service token.
+
+    Guards ``/internal/*`` routes — endpoints that exist for other services and
+    must never be reachable by a browser. A user's access token is rejected
+    here, because its ``typ`` is ``access`` and this requires ``service``.
+
+    Note:
+        This authenticates the *caller*, not a user. It is not a substitute for
+        network isolation: internal ports are bound to localhost in compose and
+        should sit behind a private network in a real deployment. The token is
+        the second layer, so that reaching the port is not the same as being
+        authorised to use it.
+
+    Args:
+        request: Injected by FastAPI.
+
+    Returns:
+        The calling service's name.
+
+    Raises:
+        UnauthorizedError: If the token is missing, invalid, or not a service
+            token.
+    """
+    header = request.headers.get("Authorization", "")
+    scheme, _, credentials = header.partition(" ")
+    if scheme.lower() != "bearer" or not credentials:
+        raise UnauthorizedError("Internal endpoint requires a service token.")
+
+    settings = request.app.state.settings
+    claims = decode_jwt(
+        credentials.strip(),
+        secret_key=settings.jwt_secret_key.get_secret_value(),
+        expected_type="service",
+        algorithm=settings.jwt_algorithm,
+    )
+    caller = claims.get("svc")
+    if not caller:
+        raise UnauthorizedError("Invalid service token.")
+    return str(caller)
+
+
+#: Route alias for internal, service-to-service endpoints.
+ServiceCaller = Annotated[str, Depends(require_service)]

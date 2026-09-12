@@ -167,7 +167,18 @@ def constant_time_compare(a: str, b: str) -> bool:
 # JWTs
 # -----------------------------------------------------------------------------
 
-TokenType = Literal["access", "refresh"]
+TokenType = Literal["access", "refresh", "service"]
+"""The three kinds of token in the system.
+
+* ``access``  — a user's short-lived credential, sent on every request.
+* ``refresh`` — a user's long-lived, revocable credential.
+* ``service`` — one microservice proving its identity to another. Carries no
+  user, so it can never be mistaken for one.
+
+The type is embedded in the ``typ`` claim and checked on every decode. Keeping
+them distinct is what stops a token issued for one purpose being replayed for
+another — the single most common JWT implementation flaw.
+"""
 
 
 def create_jwt(
@@ -255,3 +266,40 @@ def decode_jwt(
     if claims.get("typ") != expected_type:
         raise UnauthorizedError("Invalid authentication credentials.")
     return claims
+
+
+def create_service_token(
+    *,
+    service_name: str,
+    secret_key: str,
+    ttl_seconds: int = 60,
+    algorithm: str = "HS256",
+) -> str:
+    """Mint a token proving one service's identity to another.
+
+    Used when a service must call an internal endpoint on its own behalf rather
+    than a user's — orders asking catalog to price a cart, for example. The
+    token carries no user, so an internal endpoint cannot be tricked into
+    treating a service call as a customer's.
+
+    The TTL is deliberately tiny. These tokens are minted per call and never
+    stored, so a minute is ample, and it means a token captured from a log or a
+    traffic dump is useless almost immediately.
+
+    Args:
+        service_name: The calling service, e.g. ``"orders"``. Becomes ``sub``.
+        secret_key: The shared signing key.
+        ttl_seconds: Lifetime. Keep it short.
+        algorithm: JWS algorithm.
+
+    Returns:
+        The encoded service token.
+    """
+    return create_jwt(
+        subject=f"service:{service_name}",
+        token_type="service",  # noqa: S106 - a token *type* discriminator, not a secret
+        secret_key=secret_key,
+        ttl_seconds=ttl_seconds,
+        algorithm=algorithm,
+        extra_claims={"svc": service_name},
+    )

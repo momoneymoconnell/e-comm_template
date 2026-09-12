@@ -9,7 +9,6 @@ from __future__ import annotations
 import time
 
 import pytest
-
 from ecom_shared.errors import UnauthorizedError
 from ecom_shared.security import (
     constant_time_compare,
@@ -92,9 +91,7 @@ class TestJwt:
 
     def test_rejects_wrong_signing_key(self):
         """A forged token signed with any other key must not verify."""
-        token = create_jwt(
-            subject=SUBJECT, token_type="access", secret_key=SECRET, ttl_seconds=60
-        )
+        token = create_jwt(subject=SUBJECT, token_type="access", secret_key=SECRET, ttl_seconds=60)
         with pytest.raises(UnauthorizedError):
             decode_jwt(token, secret_key=OTHER_SECRET, expected_type="access")
 
@@ -109,9 +106,7 @@ class TestJwt:
             decode_jwt(refresh, secret_key=SECRET, expected_type="access")
 
     def test_rejects_expired_token(self):
-        token = create_jwt(
-            subject=SUBJECT, token_type="access", secret_key=SECRET, ttl_seconds=60
-        )
+        token = create_jwt(subject=SUBJECT, token_type="access", secret_key=SECRET, ttl_seconds=60)
         # Move the clock forward rather than sleeping for 60 seconds.
         import jwt as pyjwt
 
@@ -132,8 +127,13 @@ class TestJwt:
         ).rstrip(b"=")
         payload = base64.urlsafe_b64encode(
             json.dumps(
-                {"sub": SUBJECT, "typ": "access", "role": "admin",
-                 "exp": int(time.time()) + 600, "iat": int(time.time())}
+                {
+                    "sub": SUBJECT,
+                    "typ": "access",
+                    "role": "admin",
+                    "exp": int(time.time()) + 600,
+                    "iat": int(time.time()),
+                }
             ).encode()
         ).rstrip(b"=")
         forged = f"{header.decode()}.{payload.decode()}."
@@ -146,9 +146,7 @@ class TestJwt:
         identified in an audit trail."""
         ids = {
             decode_jwt(
-                create_jwt(
-                    subject=SUBJECT, token_type="access", secret_key=SECRET, ttl_seconds=60
-                ),
+                create_jwt(subject=SUBJECT, token_type="access", secret_key=SECRET, ttl_seconds=60),
                 secret_key=SECRET,
                 expected_type="access",
             )["jti"]

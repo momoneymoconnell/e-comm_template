@@ -14,6 +14,9 @@ dependencies = [
     "alembic>=1.14",
     "stripe>=11.4",
     "httpx>=0.28",
+    # Required by pydantic's EmailStr, which this service uses in its
+    # request models. pydantic does not pull it in automatically.
+    "email-validator>=2.2",
 ]
 
 [build-system]

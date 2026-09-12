@@ -18,13 +18,12 @@ from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-from sqlalchemy.pool import NullPool
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
-
 from ecom_auth.config import AuthSettings
 from ecom_auth.deps import get_db
 from ecom_auth.models import Base
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 #: Where the test database lives. Defaults match `make up` on a dev machine;
 #: CI overrides them with its own service container.
@@ -129,9 +128,7 @@ async def client(db, settings) -> AsyncIterator[AsyncClient]:
     from ecom_auth.router import router as auth_router
     from ecom_shared.app import create_service_app
 
-    app = create_service_app(
-        settings, routers=[auth_router, admin_router], enable_database=False
-    )
+    app = create_service_app(settings, routers=[auth_router, admin_router], enable_database=False)
     app.dependency_overrides[get_db] = lambda: db
 
     transport = ASGITransport(app=app)

@@ -286,8 +286,9 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
     ports:
       # The one port the browser uses. Published on all interfaces so you can
-      # test from a phone on the same wifi.
-      - "8080:8000"
+      # test from a phone on the same wifi. Override GATEWAY_HOST_PORT if
+      # something else on your machine already owns 8080.
+      - "${GATEWAY_HOST_PORT:-8080}:8000"
     depends_on:
       auth: {condition: service_started}
       catalog: {condition: service_started}
@@ -315,7 +316,7 @@ services:
       # its service name instead.
       INTERNAL_API_URL: http://gateway:8000
     ports:
-      - "3000:3000"
+      - "${WEB_HOST_PORT:-3000}:3000"
     depends_on:
       gateway: {condition: service_started}
     healthcheck:

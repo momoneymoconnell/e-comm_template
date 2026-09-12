@@ -5,7 +5,7 @@
 set -uo pipefail
 
 declare -a SERVICES=(
-  "gateway|8080"
+  "gateway|${GATEWAY_HOST_PORT:-8080}"
   "auth|8001"
   "catalog|8002"
   "orders|8003"
