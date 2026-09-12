@@ -1,0 +1,51 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+coverage.xml
+
+# ---- uv ----
+# uv.lock IS committed: it pins the exact dependency graph for reproducible
+# builds. Do not add it here.
+
+# ---- Node / Next.js ----
+node_modules/
+.next/
+out/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# ---- Secrets ----
+# Only .env.example is tracked. Never commit real credentials.
+.env
+.env.*
+!.env.example
+
+# ---- Data / local state ----
+data/
+*.duckdb
+*.duckdb.wal
+*.db
+*.sqlite3
+
+# ---- dbt ----
+analytics/dbt_ecom/target/
+analytics/dbt_ecom/dbt_packages/
+analytics/dbt_ecom/logs/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp

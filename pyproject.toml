@@ -1,0 +1,99 @@
+# =============================================================================
+# uv workspace root.
+#
+# This file does NOT define a deployable application. It exists to:
+#   1. Declare the workspace members (the shared library + every microservice).
+#   2. Pin ONE dependency resolution for the whole repo in a single `uv.lock`.
+#   3. Hold the shared tooling config (ruff, pytest, mypy) so every service is
+#      linted and tested identically.
+#
+# Why a workspace instead of six independent projects?
+#   Each service still declares its own dependencies in its own pyproject.toml,
+#   so a service only installs what it actually needs. But because they resolve
+#   together, two services can never end up on incompatible versions of a shared
+#   library (e.g. pydantic), which is the classic way a microservice repo rots.
+#
+# Common commands:
+#   uv sync --all-packages          # install everything for local development
+#   uv sync --package ecom-auth     # install just one service
+#   uv run --package ecom-auth pytest
+# =============================================================================
+[project]
+name = "ecom-workspace"
+version = "0.1.0"
+description = "Full-stack e-commerce template: FastAPI microservices, Postgres, DuckDB, Next.js."
+requires-python = ">=3.12"
+dependencies = []
+
+[tool.uv.workspace]
+members = ["packages/*", "services/*"]
+
+[tool.uv.sources]
+# Every service depends on `ecom-shared`. This tells uv to resolve that name to
+# the local workspace package rather than looking for it on PyPI.
+ecom-shared = { workspace = true }
+
+[dependency-groups]
+# Dev tooling lives at the root so it is installed once, not seven times.
+# Installed by `uv sync` by default; excluded from images via `--no-dev`.
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "httpx>=0.28",
+    "ruff>=0.8",
+    "mypy>=1.13",
+    "asgi-lifespan>=2.1",
+]
+
+# -----------------------------------------------------------------------------
+# Ruff: linter + formatter. One config for the whole repo.
+# -----------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["**/migrations/versions/*"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import ordering)
+    "B",    # flake8-bugbear (likely bugs)
+    "C4",   # comprehension simplifications
+    "UP",   # pyupgrade (modern syntax)
+    "S",    # flake8-bandit (security)
+    "D",    # pydocstyle (docstrings are a hard requirement in this repo)
+    "ASYNC",# async antipatterns
+]
+ignore = [
+    "D203",  # conflicts with D211; we use D211 (no blank line before class docstring)
+    "D213",  # conflicts with D212; we use D212 (summary on first line)
+    "S101",  # `assert` is fine in tests
+]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["D", "S105", "S106"]  # tests need no docstrings; hardcoded test secrets are fine
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+# -----------------------------------------------------------------------------
+# pytest
+# -----------------------------------------------------------------------------
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["packages", "services"]
+addopts = "-q --strict-markers"
+filterwarnings = ["error::DeprecationWarning"]
+
+# -----------------------------------------------------------------------------
+# mypy
+# -----------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true
+exclude = ["migrations/versions/"]
