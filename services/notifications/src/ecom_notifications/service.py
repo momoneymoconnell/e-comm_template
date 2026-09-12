@@ -13,11 +13,12 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from email.message import EmailMessage
-from typing import Any
+from typing import Any, cast
 
 import aiosmtplib
 from ecom_shared.logging import get_logger
 from sqlalchemy import delete, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ecom_notifications.config import NotificationSettings
@@ -232,7 +233,7 @@ async def purge_old(session: AsyncSession, settings: NotificationSettings) -> in
     """
     cutoff = datetime.now(UTC) - timedelta(days=settings.retention_days)
     result = await session.execute(delete(Notification).where(Notification.created_at < cutoff))
-    deleted = result.rowcount or 0
+    deleted = cast("CursorResult[Any]", result).rowcount or 0
     if deleted:
         log.info("notifications_purged", deleted=deleted, older_than_days=settings.retention_days)
     return deleted

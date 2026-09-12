@@ -8,7 +8,7 @@ password change and password reset cannot drift apart — three places enforcing
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from ecom_shared.schemas import ApiModel
@@ -265,5 +265,5 @@ class AuditEventResponse(ApiModel):
     target_type: str | None
     target_id: str | None
     ip_address: str | None
-    event_metadata: dict
+    event_metadata: dict[str, Any]
     created_at: datetime

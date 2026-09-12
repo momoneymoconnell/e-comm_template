@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from ecom_shared.identity import AdminUser, ServiceCaller, require_admin
@@ -46,7 +46,7 @@ class SendRequest(ApiModel):
 
     template: str = Field(min_length=1, max_length=80)
     to: EmailStr
-    context: dict = Field(default_factory=dict)
+    context: dict[str, Any] = Field(default_factory=dict)
 
 
 class NotificationResponse(ApiModel):

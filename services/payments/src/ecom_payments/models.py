@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from ecom_shared.db import declarative_base_for, utcnow_sql
+from ecom_shared.db import build_metadata, utcnow_sql
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -28,9 +29,18 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-Base = declarative_base_for("payments")
+
+class Base(DeclarativeBase):
+    """Declarative base for the payments service.
+
+    Its metadata carries schema="payments", so every table declared
+    against this base is created inside that schema.
+    """
+
+    metadata = build_metadata("payments")
+
 
 #: Our own view of a payment's progress, kept separate from Stripe's status
 #: vocabulary so a change on their side does not ripple through our logic.
@@ -156,7 +166,7 @@ class WebhookEvent(Base):
         String(120), nullable=False, unique=True, index=True
     )
     event_type: Mapped[str] = mapped_column(String(80), nullable=False)
-    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
 
     processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     error: Mapped[str | None] = mapped_column(Text)

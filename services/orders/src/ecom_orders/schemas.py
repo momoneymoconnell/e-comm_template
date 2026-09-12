@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
 from ecom_shared.schemas import ApiModel
@@ -167,8 +168,8 @@ class OrderResponse(ApiModel):
     shipping_cents: int
     total_cents: int
     currency: str
-    shipping_address: dict
-    billing_address: dict
+    shipping_address: dict[str, Any]
+    billing_address: dict[str, Any]
     items: list[OrderItemResponse]
     events: list[OrderEventResponse] = Field(default_factory=list)
     placed_at: datetime | None

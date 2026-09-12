@@ -1,0 +1,170 @@
+# =============================================================================
+# CI: lint, type-check and test everything on every push and pull request.
+#
+# The Python job runs against a real Postgres service container rather than
+# SQLite, because the schema depends on CITEXT, INET, JSONB and constraint
+# behaviour that a substitute would not reproduce. A suite that passes against
+# a different database is not testing what you ship.
+# =============================================================================
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Cancel superseded runs on the same branch. Without this, pushing three times
+# in a minute queues three full runs and you wait for all of them.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Matches conftest.py's defaults. The CI Postgres has no per-service roles
+  # (the init script only runs for the compose stack), so tests connect as the
+  # owner and create their own schema.
+  TEST_POSTGRES_HOST: localhost
+  TEST_POSTGRES_PORT: "5432"
+  TEST_POSTGRES_DB: ecom
+  TEST_POSTGRES_USER: ecom
+  SVC_AUTH_DB_PASSWORD: ci-test-password
+
+jobs:
+  python:
+    name: Python
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: ecom
+          POSTGRES_USER: ecom
+          POSTGRES_PASSWORD: ci-test-password
+        ports: ["5432:5432"]
+        # Without a health check the job races the database and fails
+        # intermittently, which is worse than failing reliably.
+        options: >-
+          --health-cmd "pg_isready -U ecom"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        # --frozen fails if uv.lock is out of date with the manifests, rather
+        # than silently resolving something different from local development.
+        run: uv sync --all-packages --frozen
+
+      - name: Prepare the test schema
+        # Tests need the extensions and the `auth` schema. The compose init
+        # script does far more (per-service roles and grants) and is not
+        # appropriate here, where one owner role is enough.
+        env:
+          PGPASSWORD: ci-test-password
+        run: |
+          psql -h localhost -U ecom -d ecom -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE EXTENSION IF NOT EXISTS pgcrypto;
+          CREATE EXTENSION IF NOT EXISTS citext;
+          CREATE SCHEMA IF NOT EXISTS auth;
+          SQL
+
+      - name: Run migrations
+        working-directory: services/auth
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: "5432"
+          POSTGRES_USER: ecom
+          POSTGRES_PASSWORD: ci-test-password
+          POSTGRES_DB: ecom
+          JWT_SECRET_KEY: ci-only-secret-at-least-32-characters-long
+        run: uv run alembic upgrade head
+
+      - name: Format check
+        run: uv run ruff format --check .
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Type check
+        run: uv run mypy packages services
+
+      - name: Test
+        env:
+          TEST_POSTGRES_USER: ecom
+          SVC_AUTH_DB_PASSWORD: ci-test-password
+        run: uv run pytest -q
+
+  web:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        # `npm ci` installs exactly what the lock file pins and fails if it is
+        # out of sync with package.json.
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Build
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
+          NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: pk_test_ci_placeholder
+        run: npm run build
+
+  docker:
+    name: Images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build every service image
+        # Proves the Dockerfiles work and that each service declares the
+        # dependencies it actually imports. A missing declaration passes
+        # locally, where the shared workspace venv has everything, and only
+        # fails once the service is built in isolation — which is exactly how
+        # the missing email-validator dependency was caught.
+        run: |
+          for pkg in gateway auth catalog orders payments analytics notifications; do
+            echo "::group::ecom-$pkg"
+            docker build \
+              --file docker/python-service.Dockerfile \
+              --build-arg "PACKAGE=ecom-$pkg" \
+              --build-arg "SERVICE_DIR=/app/services/$pkg" \
+              --tag "ecom-$pkg:ci" \
+              .
+            echo "::endgroup::"
+          done
+
+      - name: Build the web image
+        run: docker build --tag ecom-web:ci ./web

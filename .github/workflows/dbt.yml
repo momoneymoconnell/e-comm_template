@@ -1,0 +1,50 @@
+# =============================================================================
+# Validate the dbt project on every change to it.
+#
+# `dbt parse` compiles every model and resolves every ref() and source()
+# without touching a database, so a typo in a model name or a reference to a
+# deleted table fails here rather than at 3am during a scheduled run.
+#
+# The models themselves are exercised against real data by `make dbt-build`.
+# =============================================================================
+name: dbt
+
+on:
+  push:
+    branches: [main]
+    paths: ["analytics/**", ".github/workflows/dbt.yml"]
+  pull_request:
+    paths: ["analytics/**", ".github/workflows/dbt.yml"]
+  workflow_dispatch:
+
+jobs:
+  parse:
+    name: Parse models
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: analytics/dbt_ecom
+
+    env:
+      DBT_PROFILES_DIR: ${{ github.workspace }}/analytics/dbt_ecom
+      # A local file, so parsing needs no Postgres. The attachment in
+      # profiles.yml is only opened when a model actually runs.
+      DUCKDB_PATH: /tmp/ci.duckdb
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_DB: ecom
+      DBT_DB_USER: dbt_runner
+      DBT_DB_PASSWORD: ci-placeholder
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dbt
+        run: pip install "dbt-core>=1.9,<2.0" "dbt-duckdb>=1.9,<2.0"
+
+      - name: Parse
+        run: dbt parse --no-partial-parse
