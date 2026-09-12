@@ -320,7 +320,11 @@ services:
     depends_on:
       gateway: {condition: service_started}
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      # 127.0.0.1, not localhost. Inside the container `localhost` resolves to
+      # ::1 first, while the Next standalone server binds IPv4 0.0.0.0 - so the
+      # probe gets "connection refused" and the container never turns healthy,
+      # even though it is serving perfectly from outside.
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/api/healthz"]
       interval: 15s
       timeout: 3s
       retries: 5

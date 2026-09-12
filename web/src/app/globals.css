@@ -1,0 +1,331 @@
+/* ===========================================================================
+   Design system.
+
+   The brief: vaporwave crossed with Greco-Roman. Those pair better than they
+   sound — both are built on the same things. Vaporwave already borrows classical
+   statuary, and both lean on symmetry, columns, and a limited palette used
+   confidently.
+
+   The rules this file follows:
+
+   * Roman gives the STRUCTURE — inscriptional capitals with wide letterspacing,
+     symmetrical layout, fluted vertical rules, the Greek-key meander as a
+     divider.
+   * Vaporwave gives the COLOUR and LIGHT — magenta and cyan on deep indigo,
+     the horizon grid, gradient glow.
+   * Neither gets to hurt legibility. The neons are used on borders, rules and
+     accents; body text stays high-contrast off-white. Magenta text on indigo
+     looks wonderful in a screenshot and is unreadable in a paragraph.
+
+   Tailwind v4 is configured here in CSS rather than in a JS config file.
+   =========================================================================== */
+
+@import "tailwindcss";
+
+@theme {
+  /* --- Ground ----------------------------------------------------------- */
+  --color-void: #0a0718;
+  --color-night: #110c26;
+  --color-raised: #180f33;
+  --color-panel: #1e1440;
+
+  /* --- Structure -------------------------------------------------------- */
+  --color-edge: #2e2359;
+  --color-edge-bright: #493a80;
+
+  /* --- Text ------------------------------------------------------------- */
+  /* Marble, not pure white: #fff on a dark ground glares and vibrates. */
+  --color-marble: #f4f0ff;
+  --color-ink: #e6dffb;
+  --color-muted: #a496d6;
+  --color-faint: #7a6ca8;
+
+  /* --- Accents ---------------------------------------------------------- */
+  --color-neon: #ff5fd2;
+  --color-neon-dim: #c23fa0;
+  --color-cyan: #58e8ff;
+  --color-cyan-dim: #3aa8bd;
+  --color-gold: #e8c37e;
+  --color-gold-dim: #a8894f;
+
+  /* --- Status ----------------------------------------------------------- */
+  --color-ok: #5ee9b5;
+  --color-warn: #ffc960;
+  --color-danger: #ff7a8a;
+
+  /* --- Type ------------------------------------------------------------- */
+  /* Set by next/font in layout.tsx; the fallbacks matter because a blocked
+     Google Fonts request must not leave the page in Times New Roman. */
+  --font-display: var(--font-cinzel), "Trajan Pro", Georgia, "Times New Roman", serif;
+  --font-body: var(--font-grotesk), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", Menlo,
+    Consolas, monospace;
+
+  /* --- Motion ----------------------------------------------------------- */
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  /* Anchor links land below the sticky header instead of under it. */
+  scroll-padding-top: 6rem;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-void);
+  color: var(--color-ink);
+  font-family: var(--font-body);
+  /* Off by default in most browsers; noticeably improves the display face. */
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100dvh;
+}
+
+/* Visible focus ring for keyboard users. Browsers' defaults are nearly
+   invisible on a dark ground, and removing the outline without replacing it is
+   the single most common accessibility failure on styled sites. */
+:focus-visible {
+  outline: 2px solid var(--color-cyan);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Respect a reduced-motion preference. Vestibular disorders are real and the
+   glow and scan animations below are exactly the kind of thing that triggers
+   them. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Themed scrollbar, so the browser chrome does not break the illusion. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-edge-bright) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-edge-bright);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ---------------------------------------------------------------------------
+   Utilities
+   --------------------------------------------------------------------------- */
+
+@utility inscription {
+  /* Roman inscriptional capitals: the wide tracking is what makes it read as
+     carved rather than merely uppercase. */
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  letter-spacing: 0.22em;
+  font-weight: 600;
+}
+
+@utility chrome-text {
+  /* The vaporwave gradient fill. Used on display headings only — the
+     background-clip trick removes the text from the accessibility tree's
+     colour contrast calculation, so it must never carry body copy. */
+  background-image: linear-gradient(
+    180deg,
+    var(--color-marble) 0%,
+    var(--color-cyan) 45%,
+    var(--color-neon) 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+}
+
+@utility glow-neon {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-neon) 45%, transparent),
+    0 0 24px -6px color-mix(in srgb, var(--color-neon) 60%, transparent);
+}
+
+@utility glow-cyan {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-cyan) 40%, transparent),
+    0 0 24px -6px color-mix(in srgb, var(--color-cyan) 55%, transparent);
+}
+
+@utility surface {
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--color-panel) 90%, transparent),
+      color-mix(in srgb, var(--color-night) 96%, transparent)
+    );
+  border: 1px solid var(--color-edge);
+  border-radius: 0.75rem;
+}
+
+/* ---------------------------------------------------------------------------
+   Ornament
+   --------------------------------------------------------------------------- */
+
+/* The Greek key (meander).
+   
+   Drawn as an inline SVG data URI rather than with layered linear gradients.
+   Gradients can only produce stripes, so the first attempt at this rendered as
+   a row of disconnected ticks that read as dirt on the screen rather than as a
+   pattern. A path can actually draw the fret.
+
+   The unit is 16x12 and tiles seamlessly: the path enters at (0,10) and exits
+   at (16,10), so consecutive tiles join into one continuous line.
+
+   `shape-rendering: crispEdges` disables antialiasing, which keeps the 2px
+   strokes sharp instead of blurring them into grey mush at this size. The
+   colour is baked into the URI because CSS custom properties cannot be read
+   from inside a data URI; intensity is controlled with opacity instead. */
+.meander {
+  height: 12px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='12' viewBox='0 0 16 12' shape-rendering='crispEdges'%3E%3Cpath d='M0 10H4V2H12V10H16' fill='none' stroke='%23e8c37e' stroke-width='2'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-size: 16px 12px;
+  background-position: left center;
+  opacity: 0.55;
+}
+
+/* Fluted column edge, used as a vertical rule beside panels. */
+.fluted {
+  background-image: repeating-linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--color-marble) 10%, transparent) 0 1px,
+    transparent 1px 6px
+  );
+}
+
+/* The vaporwave horizon: a perspective grid receding to a vanishing point.
+   Pure CSS — two repeating gradients on a rotated plane. */
+.horizon-grid {
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 42vh;
+  overflow: hidden;
+  pointer-events: none;
+  mask-image: linear-gradient(to top, black 0%, transparent 92%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 92%);
+}
+
+.horizon-grid::before {
+  content: "";
+  position: absolute;
+  inset: -60% -60% -10% -60%;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      color-mix(in srgb, var(--color-neon) 34%, transparent) 0 1px,
+      transparent 1px 62px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      color-mix(in srgb, var(--color-cyan) 26%, transparent) 0 1px,
+      transparent 1px 46px
+    );
+  transform: perspective(340px) rotateX(72deg);
+  transform-origin: 50% 100%;
+  animation: grid-drift 14s linear infinite;
+}
+
+@keyframes grid-drift {
+  from {
+    background-position:
+      0 0,
+      0 0;
+  }
+  to {
+    background-position:
+      0 0,
+      0 46px;
+  }
+}
+
+/* The sun: a gradient disc with horizontal slots cut out of its lower half. */
+.vapor-sun {
+  background: linear-gradient(
+    180deg,
+    var(--color-gold) 0%,
+    var(--color-neon) 55%,
+    var(--color-neon-dim) 100%
+  );
+  mask-image: repeating-linear-gradient(
+    180deg,
+    black 0 62%,
+    black 62% 66%,
+    transparent 66% 70%,
+    black 70% 75%,
+    transparent 75% 80%,
+    black 80% 84%,
+    transparent 84% 90%
+  );
+  -webkit-mask-image: repeating-linear-gradient(
+    180deg,
+    black 0 62%,
+    black 62% 66%,
+    transparent 66% 70%,
+    black 70% 75%,
+    transparent 75% 80%,
+    black 80% 84%,
+    transparent 84% 90%
+  );
+}
+
+/* Very low-opacity scanlines. At 3% this reads as texture; any higher and it
+   becomes a legibility problem, especially on low-DPI external monitors. */
+.scanlines::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 100;
+  background: repeating-linear-gradient(
+    0deg,
+    rgba(255, 255, 255, 0.03) 0 1px,
+    transparent 1px 3px
+  );
+  mix-blend-mode: overlay;
+}
+
+/* Skeleton shimmer for loading states. */
+@keyframes shimmer {
+  from {
+    background-position: -480px 0;
+  }
+  to {
+    background-position: 480px 0;
+  }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-raised) 0%,
+    var(--color-panel) 50%,
+    var(--color-raised) 100%
+  );
+  background-size: 480px 100%;
+  animation: shimmer 1.4s linear infinite;
+}

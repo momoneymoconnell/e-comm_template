@@ -297,14 +297,30 @@ async def traffic_timeseries(session: AsyncSession, *, days: int = 30) -> list[d
         )
     ).all()
 
-    return [
-        {
-            "day": row.day.date().isoformat(),
-            "pageViews": int(row.page_views),
-            "visitors": int(row.visitors),
-        }
-        for row in rows
-    ]
+    by_day = {
+        row.day.date(): (int(row.page_views), int(row.visitors)) for row in rows
+    }
+
+    # Zero-fill every day in the window.
+    #
+    # GROUP BY only returns days that have events, so a quiet Tuesday is simply
+    # absent from the result. A chart drawn from that has no way to tell "no
+    # traffic" from "no data" - it draws a straight line across the gap, which
+    # reads as steady trading rather than none. Worse, a brand-new install has
+    # exactly one day with data and the chart renders as a single bar filling
+    # the entire width.
+    #
+    # Same reasoning as the date spine in the dbt models; see
+    # analytics/dbt_ecom/models/marts/mart_traffic_daily.sql.
+    today = datetime.now(UTC).date()
+    series: list[dict[str, Any]] = []
+    for offset in range(days, -1, -1):
+        day = today - timedelta(days=offset)
+        page_views, visitors = by_day.get(day, (0, 0))
+        series.append(
+            {"day": day.isoformat(), "pageViews": page_views, "visitors": visitors}
+        )
+    return series
 
 
 async def top_pages(

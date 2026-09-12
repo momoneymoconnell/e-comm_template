@@ -49,3 +49,8 @@ desktop.ini
 .vscode/*
 !.vscode/extensions.json
 *.swp
+
+# ---- Next.js build output (web/) ----
+web/.next/
+web/out/
+web/node_modules/
