@@ -52,9 +52,7 @@ def main(service: str, package: str, settings_class: str) -> int:
     (root / "alembic.ini").write_text(render(TEMPLATES / "alembic.ini.tmpl"))
     (root / "migrations" / "env.py").write_text(render(TEMPLATES / "alembic_env.py.tmpl"))
 
-    (root / "migrations" / "script.py.mako").write_text(
-        (TEMPLATES / "script.py.mako").read_text()
-    )
+    (root / "migrations" / "script.py.mako").write_text((TEMPLATES / "script.py.mako").read_text())
 
     # Alembic ignores a versions directory that git has dropped for being
     # empty, producing a confusing "Path doesn't exist" on the first run.

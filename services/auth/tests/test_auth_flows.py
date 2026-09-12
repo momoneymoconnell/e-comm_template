@@ -7,10 +7,9 @@ message should tell you what an attacker just became able to do.
 from __future__ import annotations
 
 import pytest
-from sqlalchemy import select
-
 from ecom_auth import service
 from ecom_auth.models import LoginAttempt, RefreshToken, User
+from sqlalchemy import select
 
 GOOD_PASSWORD = "marble-colonnade-77"
 
@@ -111,10 +110,7 @@ class TestLogin:
             json={"email": "ghost@example.com", "password": "definitely-wrong-99"},
         )
         assert wrong_password.status_code == unknown_user.status_code == 401
-        assert (
-            wrong_password.json()["error"]["message"]
-            == unknown_user.json()["error"]["message"]
-        )
+        assert wrong_password.json()["error"]["message"] == unknown_user.json()["error"]["message"]
 
     async def test_failed_attempts_are_persisted(self, client, db):
         """The row must survive the 401. If it does not, the lockout counter
@@ -125,10 +121,14 @@ class TestLogin:
             json={"email": "shopper@example.com", "password": "wrong-password-1"},
         )
         rows = (
-            await db.execute(
-                select(LoginAttempt).where(LoginAttempt.email == "shopper@example.com")
+            (
+                await db.execute(
+                    select(LoginAttempt).where(LoginAttempt.email == "shopper@example.com")
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert any(r.succeeded is False for r in rows)
 
     async def test_lockout_engages_after_threshold(self, client, settings):
@@ -236,20 +236,14 @@ class TestPasswordReset:
         """This endpoint is unauthenticated. Any difference in the response
         turns it into a customer-list extraction tool."""
         await _register(client)
-        known = await client.post(
-            "/auth/password/forgot", json={"email": "shopper@example.com"}
-        )
-        unknown = await client.post(
-            "/auth/password/forgot", json={"email": "nobody@example.com"}
-        )
+        known = await client.post("/auth/password/forgot", json={"email": "shopper@example.com"})
+        unknown = await client.post("/auth/password/forgot", json={"email": "nobody@example.com"})
         assert known.status_code == unknown.status_code == 200
         assert known.json() == unknown.json()
 
     async def test_token_is_single_use(self, client, db, settings):
         await _register(client)
-        result = await service.create_password_reset(
-            db, settings, email="shopper@example.com"
-        )
+        result = await service.create_password_reset(db, settings, email="shopper@example.com")
         assert result is not None
         _, raw = result
         await db.flush()
@@ -308,9 +302,7 @@ class TestAdminAuthorisation:
     async def test_admin_cannot_change_their_own_role(self, client, db):
         """Prevents both self-lockout and an admin quietly entrenching."""
         admin = await self._make_admin(db, client)
-        response = await client.patch(
-            f"/auth/admin/users/{admin.id}", json={"role": "customer"}
-        )
+        response = await client.patch(f"/auth/admin/users/{admin.id}", json={"role": "customer"})
         assert response.status_code == 403
 
     async def test_promotion_requires_the_allowlist(self, client, db, settings):
@@ -328,9 +320,7 @@ class TestAdminAuthorisation:
             json={"email": "admin@example.com", "password": GOOD_PASSWORD},
         )
 
-        response = await client.patch(
-            f"/auth/admin/users/{outsider.id}", json={"role": "admin"}
-        )
+        response = await client.patch(f"/auth/admin/users/{outsider.id}", json={"role": "admin"})
         assert response.status_code == 403
         assert "allowlist" in response.json()["error"]["message"]
 
@@ -341,19 +331,21 @@ class TestAdminAuthorisation:
         ).scalar_one()
         await self._make_admin(db, client)
 
-        response = await client.patch(
-            f"/auth/admin/users/{victim.id}", json={"isActive": False}
-        )
+        response = await client.patch(f"/auth/admin/users/{victim.id}", json={"isActive": False})
         assert response.status_code == 200
 
         live = (
-            await db.execute(
-                select(RefreshToken).where(
-                    RefreshToken.user_id == victim.id,
-                    RefreshToken.revoked_at.is_(None),
+            (
+                await db.execute(
+                    select(RefreshToken).where(
+                        RefreshToken.user_id == victim.id,
+                        RefreshToken.revoked_at.is_(None),
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         assert live == []
 
 

@@ -47,6 +47,7 @@ def create_service_app(
     description: str = "",
     enable_database: bool = True,
     on_startup: Sequence[object] = (),
+    on_shutdown: Sequence[object] = (),
 ) -> FastAPI:
     """Build a fully configured FastAPI application.
 
@@ -71,6 +72,11 @@ def create_service_app(
         on_startup: Extra awaitable callables, each taking the app, run after
             the database is ready. Used for one-off tasks like the admin
             bootstrap in the auth service.
+        on_shutdown: Awaitable callables, each taking the app, run during
+            shutdown *before* the database pool is disposed. Use these to close
+            clients and cancel background tasks. Preferred over FastAPI's
+            deprecated ``@app.on_event("shutdown")``, and guaranteed to run
+            even when startup raised partway through.
 
     Returns:
         The configured application, ready for uvicorn.
@@ -119,6 +125,16 @@ def create_service_app(
         try:
             yield
         finally:
+            # Shutdown hooks run in reverse registration order, so a resource
+            # created by a later hook is torn down before the earlier one it
+            # depends on. Each is isolated: one failing cleanup must not skip
+            # the rest, or a single leaked client prevents the pool closing.
+            for hook in reversed(list(on_shutdown)):
+                try:
+                    await hook(app)  # type: ignore[operator]
+                except Exception as exc:  # noqa: BLE001 - cleanup is best effort
+                    log.error("shutdown_hook_failed", error=str(exc), exc_info=exc)
+
             if app.state.db is not None:
                 await app.state.db.dispose()
             log.info("service_stopped")
