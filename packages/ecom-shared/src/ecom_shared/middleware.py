@@ -92,7 +92,7 @@ class AccessLogMiddleware(BaseHTTPMiddleware):
                 path=request.url.path,
                 status=status_code,
                 duration_ms=round((time.perf_counter() - started) * 1000, 2),
-                client_ip=_client_ip(request),
+                client_ip=client_ip(request),
             )
 
 
@@ -144,7 +144,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def _client_ip(request: Request) -> str:
+def client_ip(request: Request) -> str:
     """Best-effort client IP, honouring one layer of trusted proxy.
 
     Only the *first* entry of ``X-Forwarded-For`` is used, and only because the

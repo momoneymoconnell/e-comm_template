@@ -1,0 +1,350 @@
+# =============================================================================
+# The whole stack: `docker compose up -d` (or `make up`).
+#
+# Topology
+#
+#   browser ──► web (Next.js :3000)
+#                 │
+#                 └──► gateway (:8080) ──┬──► auth          (:8001)
+#                                        ├──► catalog       (:8002)
+#                                        ├──► orders        (:8003)
+#                                        ├──► payments      (:8004)
+#                                        ├──► analytics     (:8005)
+#                                        └──► notifications (:8006)
+#                                                │
+#                                        postgres (:5432)  ◄── dbt (on demand)
+#
+# The gateway is the only component the browser talks to. Services reach each
+# other over the private `backend` network by container name.
+# =============================================================================
+
+# Anchors, so a change to the build recipe or the shared environment happens in
+# one place instead of six. YAML merge keys (<<:) splice them into each service.
+x-service-build: &service-build
+  context: .
+  dockerfile: docker/python-service.Dockerfile
+
+x-common-env: &common-env
+  ENVIRONMENT: ${ENVIRONMENT:-development}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: 5432
+  POSTGRES_DB: ${POSTGRES_DB:-ecom}
+  JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+  ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-900}
+  REFRESH_TOKEN_TTL_SECONDS: ${REFRESH_TOKEN_TTL_SECONDS:-2592000}
+  CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-http://localhost:3000}
+  PUBLIC_API_URL: ${PUBLIC_API_URL:-http://localhost:8080}
+  PUBLIC_WEB_URL: ${PUBLIC_WEB_URL:-http://localhost:3000}
+
+# Restart policy and log rotation, applied to every long-running container.
+# Without max-size, a chatty container will happily fill the host disk.
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  networks: [backend]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+# Standard HTTP healthcheck. `start_period` gives the container time to run its
+# migrations before a failing probe counts against it.
+x-healthcheck: &healthcheck
+  test: ["CMD", "curl", "-fsS", "http://localhost:8000/health/live"]
+  interval: 15s
+  timeout: 3s
+  retries: 5
+  start_period: 40s
+
+networks:
+  backend:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  duckdb_data:
+
+services:
+  # ---------------------------------------------------------------------------
+  # Data layer
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    <<: *service-defaults
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-ecom}
+      POSTGRES_USER: ${POSTGRES_USER:-ecom}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required - run `make setup`}
+      # Read by docker/postgres/010-init-roles.sh on first boot.
+      SVC_AUTH_DB_PASSWORD: ${SVC_AUTH_DB_PASSWORD:?run `make secrets`}
+      SVC_CATALOG_DB_PASSWORD: ${SVC_CATALOG_DB_PASSWORD:?run `make secrets`}
+      SVC_ORDERS_DB_PASSWORD: ${SVC_ORDERS_DB_PASSWORD:?run `make secrets`}
+      SVC_PAYMENTS_DB_PASSWORD: ${SVC_PAYMENTS_DB_PASSWORD:?run `make secrets`}
+      SVC_ANALYTICS_DB_PASSWORD: ${SVC_ANALYTICS_DB_PASSWORD:?run `make secrets`}
+      SVC_NOTIFICATIONS_DB_PASSWORD: ${SVC_NOTIFICATIONS_DB_PASSWORD:?run `make secrets`}
+      DBT_DB_PASSWORD: ${DBT_DB_PASSWORD:?run `make secrets`}
+      # scram-sha-256 is the modern password auth method; md5 is broken.
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Everything in this directory runs once, in filename order, on first boot.
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro
+    ports:
+      # Published for psql/DBeaver from your machine. Bound to 127.0.0.1 so the
+      # database is not reachable from your local network — a published 0.0.0.0
+      # port on a laptop in a coffee shop is a genuinely bad day.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ecom} -d ${POSTGRES_DB:-ecom}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  mailpit:
+    # Catches every outbound email and shows it at http://localhost:8025.
+    # Nothing is delivered, so you can test signup and receipt flows without
+    # sending mail to a real inbox by accident.
+    image: axllent/mailpit:latest
+    <<: *service-defaults
+    ports:
+      - "127.0.0.1:8025:8025"   # web UI
+    environment:
+      MP_MAX_MESSAGES: 500
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+
+  # ---------------------------------------------------------------------------
+  # Microservices
+  # ---------------------------------------------------------------------------
+  auth:
+    build:
+      <<: *service-build
+      args:
+        PACKAGE: ecom-auth
+        SERVICE_DIR: /app/services/auth
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      SERVICE_NAME: auth
+      SERVICE_DIR: /app/services/auth
+      APP_MODULE: ecom_auth.main:app
+      POSTGRES_USER: svc_auth
+      POSTGRES_PASSWORD: ${SVC_AUTH_DB_PASSWORD}
+      ADMIN_EMAILS: ${ADMIN_EMAILS}
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD}
+      COOKIE_DOMAIN: ${COOKIE_DOMAIN:-localhost}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      NOTIFICATIONS_URL: http://notifications:8000
+    ports: ["127.0.0.1:8001:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck: *healthcheck
+
+  catalog:
+    build:
+      <<: *service-build
+      args:
+        PACKAGE: ecom-catalog
+        SERVICE_DIR: /app/services/catalog
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      SERVICE_NAME: catalog
+      SERVICE_DIR: /app/services/catalog
+      APP_MODULE: ecom_catalog.main:app
+      POSTGRES_USER: svc_catalog
+      POSTGRES_PASSWORD: ${SVC_CATALOG_DB_PASSWORD}
+    ports: ["127.0.0.1:8002:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck: *healthcheck
+
+  orders:
+    build:
+      <<: *service-build
+      args:
+        PACKAGE: ecom-orders
+        SERVICE_DIR: /app/services/orders
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      SERVICE_NAME: orders
+      SERVICE_DIR: /app/services/orders
+      APP_MODULE: ecom_orders.main:app
+      POSTGRES_USER: svc_orders
+      POSTGRES_PASSWORD: ${SVC_ORDERS_DB_PASSWORD}
+      CATALOG_URL: http://catalog:8000
+      PAYMENTS_URL: http://payments:8000
+      NOTIFICATIONS_URL: http://notifications:8000
+    ports: ["127.0.0.1:8003:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      catalog: {condition: service_started}
+    healthcheck: *healthcheck
+
+  payments:
+    build:
+      <<: *service-build
+      args:
+        PACKAGE: ecom-payments
+        SERVICE_DIR: /app/services/payments
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      SERVICE_NAME: payments
+      SERVICE_DIR: /app/services/payments
+      APP_MODULE: ecom_payments.main:app
+      POSTGRES_USER: svc_payments
+      POSTGRES_PASSWORD: ${SVC_PAYMENTS_DB_PASSWORD}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      STRIPE_CURRENCY: ${STRIPE_CURRENCY:-usd}
+      ORDERS_URL: http://orders:8000
+      NOTIFICATIONS_URL: http://notifications:8000
+    ports: ["127.0.0.1:8004:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck: *healthcheck
+
+  analytics:
+    build:
+      <<: *service-build
+      args:
+        PACKAGE: ecom-analytics
+        SERVICE_DIR: /app/services/analytics
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      SERVICE_NAME: analytics
+      SERVICE_DIR: /app/services/analytics
+      APP_MODULE: ecom_analytics.main:app
+      POSTGRES_USER: svc_analytics
+      POSTGRES_PASSWORD: ${SVC_ANALYTICS_DB_PASSWORD}
+      DUCKDB_PATH: /data/analytics.duckdb
+    volumes:
+      - duckdb_data:/data
+    ports: ["127.0.0.1:8005:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+    healthcheck: *healthcheck
+
+  notifications:
+    build:
+      <<: *service-build
+      args:
+        PACKAGE: ecom-notifications
+        SERVICE_DIR: /app/services/notifications
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      SERVICE_NAME: notifications
+      SERVICE_DIR: /app/services/notifications
+      APP_MODULE: ecom_notifications.main:app
+      POSTGRES_USER: svc_notifications
+      POSTGRES_PASSWORD: ${SVC_NOTIFICATIONS_DB_PASSWORD}
+      SMTP_HOST: ${SMTP_HOST:-mailpit}
+      SMTP_PORT: ${SMTP_PORT:-1025}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-false}
+      EMAIL_FROM: ${EMAIL_FROM:-no-reply@localhost}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-Atelier}
+    ports: ["127.0.0.1:8006:8000"]
+    depends_on:
+      postgres: {condition: service_healthy}
+      mailpit: {condition: service_started}
+    healthcheck: *healthcheck
+
+  # ---------------------------------------------------------------------------
+  # Edge
+  # ---------------------------------------------------------------------------
+  gateway:
+    build:
+      <<: *service-build
+      args:
+        PACKAGE: ecom-gateway
+        SERVICE_DIR: /app/services/gateway
+    <<: *service-defaults
+    environment:
+      <<: *common-env
+      SERVICE_NAME: gateway
+      SERVICE_DIR: /app/services/gateway
+      APP_MODULE: ecom_gateway.main:app
+      # The gateway owns no tables, so it skips the migration step entirely.
+      RUN_MIGRATIONS: "false"
+      AUTH_URL: http://auth:8000
+      CATALOG_URL: http://catalog:8000
+      ORDERS_URL: http://orders:8000
+      PAYMENTS_URL: http://payments:8000
+      ANALYTICS_URL: http://analytics:8000
+      NOTIFICATIONS_URL: http://notifications:8000
+      RATE_LIMIT_REQUESTS: ${RATE_LIMIT_REQUESTS:-120}
+      RATE_LIMIT_WINDOW_SECONDS: ${RATE_LIMIT_WINDOW_SECONDS:-60}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      # The one port the browser uses. Published on all interfaces so you can
+      # test from a phone on the same wifi.
+      - "8080:8000"
+    depends_on:
+      auth: {condition: service_started}
+      catalog: {condition: service_started}
+      orders: {condition: service_started}
+      payments: {condition: service_started}
+      analytics: {condition: service_started}
+      notifications: {condition: service_started}
+    healthcheck: *healthcheck
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* values are baked into the JS bundle at build time, not
+        # read at runtime, so they must be build args rather than environment.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+        NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY}
+        NEXT_PUBLIC_SITE_NAME: ${NEXT_PUBLIC_SITE_NAME:-Atelier}
+    <<: *service-defaults
+    environment:
+      NODE_ENV: production
+      # Server-side rendering runs inside the compose network, where
+      # "localhost" is the web container itself. It must call the gateway by
+      # its service name instead.
+      INTERNAL_API_URL: http://gateway:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      gateway: {condition: service_started}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/healthz"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  # ---------------------------------------------------------------------------
+  # Tools — not started by `up`; invoked on demand via `make dbt-*`.
+  # ---------------------------------------------------------------------------
+  dbt:
+    build:
+      context: .
+      dockerfile: docker/dbt.Dockerfile
+    profiles: ["tools"]
+    networks: [backend]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-ecom}
+      DBT_DB_USER: dbt_runner
+      DBT_DB_PASSWORD: ${DBT_DB_PASSWORD}
+      DUCKDB_PATH: /data/analytics.duckdb
+    volumes:
+      - ./analytics/dbt_ecom:/dbt
+      - duckdb_data:/data
+    ports:
+      - "127.0.0.1:8081:8081"   # `make dbt-docs`
+    depends_on:
+      postgres: {condition: service_healthy}
