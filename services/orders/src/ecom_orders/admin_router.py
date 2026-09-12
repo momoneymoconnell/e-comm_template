@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
 from ecom_shared.identity import AdminUser, require_admin
@@ -90,7 +90,7 @@ async def update_status(
 
 
 @router.get("/stats/summary", summary="Revenue and order statistics")
-async def order_stats(admin: AdminUser, db: Db, days: int = 30) -> dict:
+async def order_stats(admin: AdminUser, db: Db, days: int = 30) -> dict[str, Any]:
     """Return headline order and revenue figures for the dashboard.
 
     Revenue counts only orders that actually reached ``paid`` or beyond.

@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from ecom_shared.db import declarative_base_for, utcnow_sql
+from ecom_shared.db import build_metadata, utcnow_sql
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -36,9 +37,18 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-Base = declarative_base_for("orders")
+
+class Base(DeclarativeBase):
+    """Declarative base for the orders service.
+
+    Its metadata carries schema="orders", so every table declared
+    against this base is created inside that schema.
+    """
+
+    metadata = build_metadata("orders")
+
 
 #: Cart lifecycle.
 CART_STATUSES = ("open", "converted", "abandoned")
@@ -195,8 +205,12 @@ class Order(Base):
     total_cents: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False, server_default="usd")
 
-    shipping_address: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
-    billing_address: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    shipping_address: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
+    billing_address: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default="{}"
+    )
 
     payment_intent_id: Mapped[str | None] = mapped_column(String(120), unique=True)
     cart_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))

@@ -32,7 +32,6 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
 
 from ecom_shared.logging import get_logger
 
@@ -66,31 +65,23 @@ def build_metadata(schema: str) -> MetaData:
     return MetaData(schema=schema, naming_convention=NAMING_CONVENTION)
 
 
-def declarative_base_for(schema: str) -> type[DeclarativeBase]:
-    """Build the ORM base class for a service's models.
-
-    Every service defines its models against its own base, so tables are
-    automatically created inside that service's schema::
-
-        # services/orders/src/ecom_orders/models.py
-        Base = declarative_base_for("orders")
-
-        class Order(Base):
-            __tablename__ = "orders"   # becomes orders.orders
-
-    Args:
-        schema: The schema this service owns.
-
-    Returns:
-        A new `DeclarativeBase` subclass whose metadata targets `schema`.
-    """
-
-    class Base(DeclarativeBase):
-        """Declarative base scoped to a single service schema."""
-
-        metadata = build_metadata(schema)
-
-    return Base
+# Note: there is deliberately no `declarative_base_for(schema)` factory here.
+#
+# Returning a dynamically constructed class is tidy at the call site, but mypy
+# cannot use a *variable* as a base class, so every model in the project
+# degraded to `Any` and lost static checking entirely. Each service declares its
+# own two-line base instead:
+#
+#     # services/orders/src/ecom_orders/models.py
+#     class Base(DeclarativeBase):
+#         """Declarative base for the orders service."""
+#         metadata = build_metadata("orders")
+#
+#     class Order(Base):
+#         __tablename__ = "orders"    # becomes orders.orders
+#
+# Two extra lines per service, in exchange for type checking across ~30 model
+# classes.
 
 
 class Database:

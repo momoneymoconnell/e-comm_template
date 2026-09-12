@@ -23,8 +23,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from ecom_shared.db import declarative_base_for, utcnow_sql
+from ecom_shared.db import build_metadata, utcnow_sql
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -34,9 +35,18 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-Base = declarative_base_for("analytics")
+
+class Base(DeclarativeBase):
+    """Declarative base for the analytics service.
+
+    Its metadata carries schema="analytics", so every table declared
+    against this base is created inside that schema.
+    """
+
+    metadata = build_metadata("analytics")
+
 
 #: Events the storefront is allowed to report.
 #:
@@ -97,7 +107,7 @@ class Event(Base):
     #: actually uses.
     country: Mapped[str | None] = mapped_column(String(2))
 
-    properties: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    properties: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
 
     #: Client-reported timestamp is never trusted for ordering; the server
     #: clock is authoritative. A client that lies about time would otherwise

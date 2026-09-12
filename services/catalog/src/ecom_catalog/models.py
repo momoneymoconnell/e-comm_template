@@ -25,7 +25,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from ecom_shared.db import declarative_base_for, utcnow_sql
+from ecom_shared.db import build_metadata, utcnow_sql
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -38,9 +38,18 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-Base = declarative_base_for("catalog")
+
+class Base(DeclarativeBase):
+    """Declarative base for the catalog service.
+
+    Its metadata carries schema="catalog", so every table declared
+    against this base is created inside that schema.
+    """
+
+    metadata = build_metadata("catalog")
+
 
 #: Product lifecycle.
 #:

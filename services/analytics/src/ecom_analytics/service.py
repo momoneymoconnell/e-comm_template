@@ -5,11 +5,12 @@ from __future__ import annotations
 import hashlib
 import re
 from datetime import UTC, date, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from urllib.parse import urlparse
 
 from ecom_shared.logging import get_logger
 from sqlalchemy import delete, func, select
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ecom_analytics.config import AnalyticsSettings
@@ -297,9 +298,7 @@ async def traffic_timeseries(session: AsyncSession, *, days: int = 30) -> list[d
         )
     ).all()
 
-    by_day = {
-        row.day.date(): (int(row.page_views), int(row.visitors)) for row in rows
-    }
+    by_day = {row.day.date(): (int(row.page_views), int(row.visitors)) for row in rows}
 
     # Zero-fill every day in the window.
     #
@@ -317,9 +316,7 @@ async def traffic_timeseries(session: AsyncSession, *, days: int = 30) -> list[d
     for offset in range(days, -1, -1):
         day = today - timedelta(days=offset)
         page_views, visitors = by_day.get(day, (0, 0))
-        series.append(
-            {"day": day.isoformat(), "pageViews": page_views, "visitors": visitors}
-        )
+        series.append({"day": day.isoformat(), "pageViews": page_views, "visitors": visitors})
     return series
 
 
@@ -359,7 +356,7 @@ async def top_pages(
     ]
 
 
-async def conversion_funnel(session: AsyncSession, *, days: int = 30) -> list[dict]:
+async def conversion_funnel(session: AsyncSession, *, days: int = 30) -> list[dict[str, Any]]:
     """Count distinct sessions reaching each checkout step.
 
     Counted on **distinct sessions**, not raw events. A shopper who adds three
@@ -457,7 +454,7 @@ async def purge_old_events(session: AsyncSession, settings: AnalyticsSettings) -
     """
     cutoff = datetime.now(UTC) - timedelta(days=settings.event_retention_days)
     result = await session.execute(delete(Event).where(Event.occurred_at < cutoff))
-    deleted = result.rowcount or 0
+    deleted = cast("CursorResult[Any]", result).rowcount or 0
     if deleted:
         log.info("analytics_events_purged", deleted=deleted)
     return deleted

@@ -17,6 +17,7 @@ Three rules applied to every call:
 
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 import httpx
@@ -69,7 +70,7 @@ class ServiceClient:
             REQUEST_ID_HEADER: get_request_id(),
         }
 
-    async def _post(self, url: str, payload: dict) -> dict:
+    async def _post(self, url: str, payload: dict[str, Any]) -> dict[str, Any]:
         """POST JSON to an internal endpoint and return the decoded response.
 
         Args:
@@ -111,7 +112,7 @@ class ServiceClient:
         return _safe_json(response)
 
 
-def _safe_json(response: httpx.Response) -> dict:
+def _safe_json(response: httpx.Response) -> dict[str, Any]:
     """Decode a JSON body, tolerating a non-JSON error page.
 
     A dependency behind a misconfigured proxy can return HTML with a 502. That
@@ -133,7 +134,7 @@ def _safe_json(response: httpx.Response) -> dict:
 class CatalogClient(ServiceClient):
     """Calls into the catalog service."""
 
-    async def price_variants(self, variant_ids: list[UUID]) -> list[dict]:
+    async def price_variants(self, variant_ids: list[UUID]) -> list[dict[str, Any]]:
         """Fetch authoritative prices and availability.
 
         This is the guard against cart tampering: the browser sends variant IDs
@@ -209,7 +210,7 @@ class PaymentsClient(ServiceClient):
         amount_cents: int,
         currency: str,
         email: str,
-    ) -> dict:
+    ) -> dict[str, Any]:
         """Create a Stripe payment intent for an order.
 
         Args:
@@ -240,7 +241,7 @@ class PaymentsClient(ServiceClient):
 class NotificationsClient(ServiceClient):
     """Calls into the notifications service."""
 
-    async def send(self, *, template: str, to: str, context: dict) -> None:
+    async def send(self, *, template: str, to: str, context: dict[str, Any]) -> None:
         """Queue a transactional email.
 
         Never raises: a receipt that fails to send must not roll back a paid

@@ -30,7 +30,7 @@ from ecom_auth import service
 from ecom_auth.config import AuthSettings
 from ecom_auth.cookies import clear_session_cookies, set_session_cookies
 from ecom_auth.deps import get_db, get_settings
-from ecom_auth.models import RefreshToken
+from ecom_auth.models import RefreshToken, User
 from ecom_auth.schemas import (
     ChangePasswordRequest,
     ForgotPasswordRequest,
@@ -68,7 +68,7 @@ async def _establish_session(
     db: AsyncSession,
     settings: AuthSettings,
     response: Response,
-    user: service.User,
+    user: User,
     request: Request,
 ) -> SessionResponse:
     """Mint tokens, set cookies, and build the login/refresh response body.

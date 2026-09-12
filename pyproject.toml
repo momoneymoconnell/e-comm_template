@@ -100,4 +100,17 @@ python_version = "3.12"
 strict = true
 plugins = ["pydantic.mypy"]
 ignore_missing_imports = true
-exclude = ["migrations/versions/"]
+# Alembic scaffolding. Every service has a `migrations/env.py`, and mypy maps
+# files to module names, so six files called `env` collide and it refuses to
+# check anything at all. They are generated from one shared template
+# (scripts/templates/) and contain no application logic.
+# Alembic scaffolding and tests.
+#
+# Every service has a `migrations/env.py`, and mypy maps files to module names,
+# so six files called `env` collide and it refuses to check anything at all.
+# They are generated from one shared template and hold no application logic.
+#
+# Tests are excluded because strict mode demands annotations on every fixture
+# and helper, which buys very little: a test that is wrong fails when it runs,
+# which is the whole point of it.
+exclude = ["migrations/", "/tests/"]

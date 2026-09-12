@@ -13,7 +13,14 @@ settings = OrderSettings()
 
 app = create_service_app(
     settings,
-    routers=[public_router, admin_router, internal_router],
+    # Order matters. FastAPI matches routes in registration order, and the
+    # customer router ends with `GET /orders/{order_id}` - a catch-all for one
+    # path segment. Registered first, it swallows `GET /orders/admin` and tries
+    # to parse "admin" as a UUID, so the admin order list returns 422 and is
+    # effectively unreachable.
+    #
+    # More specific routers first; the catch-all last.
+    routers=[admin_router, internal_router, public_router],
     title="Orders Service",
     description=(
         "Carts, checkout and the order lifecycle.\n\n"

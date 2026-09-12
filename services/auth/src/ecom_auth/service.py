@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from ecom_shared.errors import ConflictError, ForbiddenError, NotFoundError, UnauthorizedError
@@ -29,6 +29,7 @@ from ecom_shared.security import (
     verify_password,
 )
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -565,7 +566,7 @@ async def revoke_all_sessions(
         .where(RefreshToken.user_id == user_id, RefreshToken.revoked_at.is_(None))
         .values(revoked_at=datetime.now(UTC))
     )
-    count = result.rowcount or 0
+    count = cast("CursorResult[Any]", result).rowcount or 0
     log.info("sessions_revoked", user_id=str(user_id), count=count, reason=reason)
     return count
 

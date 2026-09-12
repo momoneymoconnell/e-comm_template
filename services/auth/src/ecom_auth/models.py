@@ -22,8 +22,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from ecom_shared.db import declarative_base_for, utcnow_sql
+from ecom_shared.db import build_metadata, utcnow_sql
 from sqlalchemy import (
     Boolean,
     CheckConstraint,
@@ -35,9 +36,18 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, INET, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-Base = declarative_base_for("auth")
+
+class Base(DeclarativeBase):
+    """Declarative base for the auth service.
+
+    Its metadata carries schema="auth", so every table declared
+    against this base is created inside that schema.
+    """
+
+    metadata = build_metadata("auth")
+
 
 #: Every role the system recognises. Enforced by a CHECK constraint rather than
 #: a Postgres ENUM: adding a value to an ENUM requires a migration that locks
@@ -289,7 +299,7 @@ class AuditEvent(Base):
     user_agent: Mapped[str | None] = mapped_column(String(400))
     # Named `event_metadata` because `metadata` is reserved on a SQLAlchemy
     # declarative class; the column itself is plain `metadata` in Postgres.
-    event_metadata: Mapped[dict] = mapped_column(
+    event_metadata: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, nullable=False, server_default="{}"
     )
     created_at: Mapped[datetime] = mapped_column(

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import secrets
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from ecom_shared.errors import ConflictError, ForbiddenError, NotFoundError, ValidationFailedError
@@ -234,7 +235,7 @@ def compute_totals(subtotal_cents: int, settings: OrderSettings) -> tuple[int, i
     return tax_cents, shipping_cents, subtotal_cents + tax_cents + shipping_cents
 
 
-async def price_cart(cart: Cart, catalog: CatalogClient, settings: OrderSettings) -> dict:
+async def price_cart(cart: Cart, catalog: CatalogClient, settings: OrderSettings) -> dict[str, Any]:
     """Price a cart against the live catalogue.
 
     Called on every cart read and again at checkout. Prices are never cached on
@@ -269,7 +270,7 @@ async def price_cart(cart: Cart, catalog: CatalogClient, settings: OrderSettings
     priced = await catalog.price_variants([item.variant_id for item in cart.items])
     by_id = {UUID(entry["id"]): entry for entry in priced}
 
-    items: list[dict] = []
+    items: list[dict[str, Any]] = []
     subtotal = 0
     any_unavailable = False
 
@@ -343,13 +344,13 @@ async def checkout(
     *,
     cart: Cart,
     email: str,
-    shipping_address: dict,
-    billing_address: dict,
+    shipping_address: dict[str, Any],
+    billing_address: dict[str, Any],
     user_id: UUID | None,
     settings: OrderSettings,
     catalog: CatalogClient,
     payments: PaymentsClient,
-) -> tuple[Order, dict]:
+) -> tuple[Order, dict[str, Any]]:
     """Convert a cart into an order and start payment.
 
     The sequence, and why it is in this order:

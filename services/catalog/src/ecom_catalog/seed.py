@@ -14,6 +14,7 @@ duplicates and does not reset stock you have been testing against.
 from __future__ import annotations
 
 import asyncio
+from typing import TypedDict
 
 from ecom_shared.db import Database
 from ecom_shared.logging import configure_logging, get_logger
@@ -24,13 +25,45 @@ from ecom_catalog.models import Category, Product, ProductVariant
 
 log = get_logger(__name__)
 
-DEMO_CATEGORIES = [
+
+class VariantSpec(TypedDict, total=False):
+    """One demo variant. `total=False` because most keys are optional."""
+
+    sku: str
+    name: str
+    price_cents: int
+    compare_at: int
+    qty: int
+    track: bool
+
+
+class ProductSpec(TypedDict):
+    """One demo product."""
+
+    slug: str
+    title: str
+    subtitle: str
+    description: str
+    category: str
+    status: str
+    variants: list[VariantSpec]
+
+
+class CategorySpec(TypedDict):
+    """One demo category."""
+
+    slug: str
+    name: str
+    position: int
+
+
+DEMO_CATEGORIES: list[CategorySpec] = [
     {"slug": "collection-one", "name": "Collection One", "position": 1},
     {"slug": "collection-two", "name": "Collection Two", "position": 2},
     {"slug": "archive", "name": "Archive", "position": 3},
 ]
 
-DEMO_PRODUCTS = [
+DEMO_PRODUCTS: list[ProductSpec] = [
     {
         "slug": "placeholder-item-01",
         "title": "Placeholder Item 01",
@@ -113,22 +146,25 @@ async def seed() -> None:
             categories[spec["slug"]] = existing
 
         created = 0
-        for spec in DEMO_PRODUCTS:
+        # A distinct loop variable: reusing `spec` from the category loop above
+        # makes the type checker narrow it to CategorySpec for the rest of the
+        # function.
+        for product_spec in DEMO_PRODUCTS:
             exists = (
-                await session.execute(select(Product).where(Product.slug == spec["slug"]))
+                await session.execute(select(Product).where(Product.slug == product_spec["slug"]))
             ).scalar_one_or_none()
             if exists is not None:
                 continue
 
             product = Product(
-                slug=spec["slug"],
-                title=spec["title"],
-                subtitle=spec["subtitle"],
-                description=spec["description"],
-                status=spec["status"],
-                category_id=categories[spec["category"]].id,
+                slug=product_spec["slug"],
+                title=product_spec["title"],
+                subtitle=product_spec["subtitle"],
+                description=product_spec["description"],
+                status=product_spec["status"],
+                category_id=categories[product_spec["category"]].id,
             )
-            for index, variant in enumerate(spec["variants"]):
+            for index, variant in enumerate(product_spec["variants"]):
                 product.variants.append(
                     ProductVariant(
                         sku=variant["sku"],

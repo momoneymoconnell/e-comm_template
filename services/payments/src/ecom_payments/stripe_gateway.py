@@ -102,7 +102,11 @@ class StripeGateway:
             log.error("stripe_error", error=str(exc))
             raise UpstreamError("Payments are temporarily unavailable.") from exc
 
-        return dict(intent)
+        # `to_dict()` rather than `dict(intent)`: Stripe's objects are not dict
+        # subclasses. The rest of the service treats Stripe responses as opaque
+        # mappings, which keeps the SDK's own types out of our business logic
+        # and makes swapping providers a change to this file alone.
+        return intent.to_dict()
 
     async def refund(
         self, *, payment_intent_id: str, amount_cents: int | None, reason: str | None
@@ -123,7 +127,9 @@ class StripeGateway:
                 payment was already fully refunded.
             UpstreamError: For any other Stripe failure.
         """
-        params: dict[str, Any] = {"payment_intent": payment_intent_id}
+        # Typed as the SDK's TypedDict so the checker accepts it; built
+        # incrementally because the optional keys depend on the caller.
+        params: Any = {"payment_intent": payment_intent_id}
         if amount_cents is not None:
             params["amount"] = amount_cents
         if reason:
@@ -140,7 +146,7 @@ class StripeGateway:
             log.error("stripe_refund_failed", error=str(exc))
             raise UpstreamError("Could not process the refund. Try again shortly.") from exc
 
-        return dict(refund)
+        return refund.to_dict()
 
     def verify_webhook(self, payload: bytes, signature_header: str) -> dict[str, Any]:
         """Verify a webhook signature and return the decoded event.

@@ -65,7 +65,7 @@ class DuckDBReader:
         except OSError:
             return False
 
-    def _query_sync(self, sql: str, params: list[Any] | None = None) -> list[dict]:
+    def _query_sync(self, sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
         """Run a query, opening and closing a read-only connection.
 
         Opening per query is deliberate. dbt rebuilds this file wholesale, and
@@ -96,7 +96,7 @@ class DuckDBReader:
             log.warning("duckdb_query_failed", error=str(exc)[:200])
             return []
 
-    async def query(self, sql: str, params: list[Any] | None = None) -> list[dict]:
+    async def query(self, sql: str, params: list[Any] | None = None) -> list[dict[str, Any]]:
         """Run a query without blocking the event loop.
 
         DuckDB's Python client is synchronous and CPU-bound while scanning.
@@ -112,7 +112,7 @@ class DuckDBReader:
         """
         return await asyncio.to_thread(self._query_sync, sql, params)
 
-    async def revenue_by_day(self, days: int = 30) -> list[dict]:
+    async def revenue_by_day(self, days: int = 30) -> list[dict[str, Any]]:
         """Daily revenue and order counts from the marts.
 
         Args:
@@ -134,7 +134,7 @@ class DuckDBReader:
             [days],
         )
 
-    async def top_products(self, limit: int = 10) -> list[dict]:
+    async def top_products(self, limit: int = 10) -> list[dict[str, Any]]:
         """Best-selling products by revenue.
 
         Args:

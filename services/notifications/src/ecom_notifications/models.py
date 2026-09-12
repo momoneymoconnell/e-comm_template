@@ -18,8 +18,9 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
-from ecom_shared.db import declarative_base_for, utcnow_sql
+from ecom_shared.db import build_metadata, utcnow_sql
 from sqlalchemy import (
     CheckConstraint,
     DateTime,
@@ -30,9 +31,18 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import CITEXT, JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-Base = declarative_base_for("notifications")
+
+class Base(DeclarativeBase):
+    """Declarative base for the notifications service.
+
+    Its metadata carries schema="notifications", so every table declared
+    against this base is created inside that schema.
+    """
+
+    metadata = build_metadata("notifications")
+
 
 #: Delivery lifecycle.
 #:
@@ -67,7 +77,7 @@ class Notification(Base):
     subject: Mapped[str] = mapped_column(String(300), nullable=False)
     body_html: Mapped[str] = mapped_column(Text, nullable=False)
     body_text: Mapped[str] = mapped_column(Text, nullable=False)
-    context: Mapped[dict] = mapped_column(JSONB, nullable=False, server_default="{}")
+    context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, server_default="{}")
 
     status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="queued")
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")

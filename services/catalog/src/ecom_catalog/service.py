@@ -17,6 +17,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ecom_catalog.models import Category, Product, ProductVariant
+from ecom_catalog.schemas import (
+    CategoryWrite,
+    ProductPatch,
+    ProductWrite,
+    VariantWrite,
+)
 
 log = get_logger(__name__)
 
@@ -273,7 +279,7 @@ async def release_inventory(session: AsyncSession, lines: list[tuple[UUID, int]]
 # -----------------------------------------------------------------------------
 
 
-async def create_product(session: AsyncSession, payload) -> Product:  # noqa: ANN001
+async def create_product(session: AsyncSession, payload: ProductWrite) -> Product:
     """Create a product and its variants.
 
     Args:
@@ -326,7 +332,7 @@ async def create_product(session: AsyncSession, payload) -> Product:  # noqa: AN
     return product
 
 
-async def update_product(session: AsyncSession, product_id: UUID, payload) -> Product:  # noqa: ANN001
+async def update_product(session: AsyncSession, product_id: UUID, payload: ProductPatch) -> Product:
     """Apply a partial update to a product.
 
     Only fields explicitly present in the request body are written.
@@ -363,7 +369,9 @@ async def update_product(session: AsyncSession, product_id: UUID, payload) -> Pr
     return product
 
 
-async def replace_variants(session: AsyncSession, product_id: UUID, variants: list) -> Product:
+async def replace_variants(
+    session: AsyncSession, product_id: UUID, variants: list[VariantWrite]
+) -> Product:
     """Replace a product's variant list wholesale.
 
     Variants are matched by SKU so that stock and IDs survive an edit. A naive
@@ -431,7 +439,7 @@ async def replace_variants(session: AsyncSession, product_id: UUID, variants: li
     return product
 
 
-async def create_category(session: AsyncSession, payload) -> Category:  # noqa: ANN001
+async def create_category(session: AsyncSession, payload: CategoryWrite) -> Category:
     """Create a category.
 
     Args:
