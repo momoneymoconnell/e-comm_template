@@ -1,0 +1,41 @@
+# =============================================================================
+# dbt connection profile.
+#
+# Architecture: DuckDB is the compute engine, and Postgres is ATTACHED to it
+# read-only rather than copied from.
+#
+# That means there is no ETL step and no staleness. dbt reads the live
+# transactional tables through DuckDB's postgres extension, does the
+# aggregation with a columnar engine, and writes the marts into a local file
+# that the analytics service reads. Heavy analytical scans therefore never run
+# on the database that checkout depends on.
+#
+# The attachment is READ_ONLY, and dbt_runner only holds SELECT on the service
+# schemas anyway. A broken model cannot damage an order.
+#
+# Credentials come from the environment. Nothing secret is in this file, which
+# is why it is safe to commit.
+# =============================================================================
+ecom:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: "{{ env_var('DUCKDB_PATH', '/data/analytics.duckdb') }}"
+
+      extensions:
+        - postgres
+
+      attach:
+        - path: "dbname={{ env_var('POSTGRES_DB', 'ecom') }} user={{ env_var('DBT_DB_USER', 'dbt_runner') }} password={{ env_var('DBT_DB_PASSWORD') }} host={{ env_var('POSTGRES_HOST', 'postgres') }} port={{ env_var('POSTGRES_PORT', '5432') }}"
+          type: postgres
+          alias: pg
+          # A dedicated boolean field, not an entry in `options` - `options`
+          # takes a mapping, and passing the string "READ_ONLY" there fails
+          # profile validation with a schema error that does not name the field.
+          read_only: true
+
+      # Threads are how many models dbt builds in parallel. Four is comfortable
+      # for this many models; raising it mostly adds contention on the Postgres
+      # side, which is the shared resource we are trying to protect.
+      threads: 4

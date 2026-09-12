@@ -1,0 +1,68 @@
+# Documentation and tests for the staging layer.
+version: 2
+
+models:
+  - name: stg_orders
+    description: >
+      Orders, typed and cleaned. Defines `is_revenue` - the single project-wide
+      answer to "does this order count as money" - so no downstream mart has to
+      decide for itself and get a different answer.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: order_number
+        data_tests: [unique, not_null]
+      - name: is_revenue
+        description: Paid, fulfilled or delivered.
+        data_tests: [not_null]
+      - name: total_cents
+        data_tests: [not_null]
+
+  - name: stg_order_items
+    description: Purchased lines, snapshotted at purchase time.
+    columns:
+      - name: order_item_id
+        data_tests: [unique, not_null]
+      - name: order_id
+        data_tests:
+          - not_null
+          # Every line must belong to a real order. A failure here means order
+          # data is being deleted out from under its items.
+          - relationships:
+              arguments:
+                  to: ref('stg_orders')
+                  field: order_id
+
+  - name: stg_users
+    description: Accounts. Deliberately excludes password_hash.
+    columns:
+      - name: user_id
+        data_tests: [unique, not_null]
+      - name: email
+        data_tests: [unique, not_null]
+
+  - name: stg_product_variants
+    description: Variants joined to their product, with stock flags.
+    columns:
+      - name: variant_id
+        data_tests: [unique, not_null]
+      - name: sku
+        data_tests: [unique, not_null]
+
+  - name: stg_payments
+    description: >
+      Stripe payment attempts. `captured_cents` is what Stripe confirms it took;
+      `requested_cents` is only what we asked for.
+    columns:
+      - name: payment_id
+        data_tests: [unique, not_null]
+      - name: payment_intent_id
+        data_tests: [unique, not_null]
+
+  - name: stg_events
+    description: Pseudonymised traffic events.
+    columns:
+      - name: event_id
+        data_tests: [unique, not_null]
+      - name: event_type
+        data_tests: [not_null]

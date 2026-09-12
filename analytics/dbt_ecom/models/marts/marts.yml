@@ -1,0 +1,121 @@
+# =============================================================================
+# Documentation and data tests for the marts.
+#
+# These tests are the point of using dbt rather than a folder of SQL scripts.
+# They run in CI and on every `make dbt-build`, and they catch the class of
+# problem that is otherwise invisible: the dashboard still renders, the numbers
+# are simply wrong.
+#
+# `accepted_range` is defined locally in macros/test_accepted_range.sql rather
+# than pulled from dbt_utils - see that file for why.
+# =============================================================================
+version: 2
+
+models:
+  - name: mart_daily_revenue
+    description: >
+      Daily orders and revenue, built on a date spine so days with no sales
+      appear as explicit zeros rather than being missing from the series.
+      "Revenue" means paid, fulfilled or delivered - defined once in
+      stg_orders and never redefined downstream.
+    columns:
+      - name: order_day
+        description: Calendar day.
+        data_tests: [unique, not_null]
+      - name: revenue_cents
+        description: Paid revenue in minor units.
+        data_tests:
+          - not_null
+          # Revenue cannot be negative. If this fires, either a refund is being
+          # counted as a sale or a total was stored wrong.
+          - accepted_range:
+              arguments:
+                  min_value: 0
+                  inclusive: true
+      - name: orders
+        description: Orders that reached a paid status.
+        data_tests:
+          - not_null
+          - accepted_range:
+              arguments:
+                  min_value: 0
+                  inclusive: true
+      - name: avg_order_value_cents
+        description: Revenue divided by paid orders; zero on days with none.
+        data_tests: [not_null]
+
+  - name: mart_product_performance
+    description: >
+      Units and revenue per variant, from purchase-time snapshots so renaming
+      or archiving a product does not retroactively change past figures.
+      Joined to current catalogue state so a best seller running low on stock
+      is visible on the same row.
+    columns:
+      - name: sku
+        description: Stock-keeping unit.
+        data_tests: [not_null]
+      - name: units_sold
+        data_tests:
+          - not_null
+          - accepted_range:
+              arguments:
+                  min_value: 1
+                  inclusive: true
+      - name: revenue_cents
+        data_tests: [not_null]
+
+  - name: mart_customer_value
+    description: >
+      One row per customer, keyed on email so guest orders and later account
+      orders belong to the same person. Holds order behaviour only - no
+      addresses, no credentials, no browsing history.
+    columns:
+      - name: email
+        description: Customer email, lowercased.
+        data_tests: [unique, not_null]
+      - name: lifetime_value_cents
+        data_tests:
+          - not_null
+          - accepted_range:
+              arguments:
+                  min_value: 0
+                  inclusive: true
+      - name: is_repeat_customer
+        description: Whether they have more than one paid order.
+        data_tests: [not_null]
+
+  - name: mart_traffic_daily
+    description: >
+      Daily traffic and conversion. "Visitors" is counted from a hash whose
+      salt rotates daily, so it counts people within a day and visitor-days
+      when summed across days. Do not build a monthly-uniques figure on it.
+    columns:
+      - name: day
+        data_tests: [unique, not_null]
+      - name: conversion_rate_pct
+        description: Completed checkouts as a percentage of sessions.
+        data_tests:
+          - not_null
+          # A conversion rate above 100% means sessions are being miscounted.
+          - accepted_range:
+              arguments:
+                  min_value: 0
+                  max_value: 100
+                  inclusive: true
+
+  - name: mart_funnel
+    description: >
+      Checkout funnel by distinct sessions. Counting events instead would let
+      the funnel widen partway down, which is impossible.
+    columns:
+      - name: step
+        data_tests:
+          - unique
+          - not_null
+          - accepted_values:
+              arguments:
+                  values:
+                    ["page_view", "product_view", "add_to_cart",
+                     "checkout_started", "checkout_completed"]
+      - name: sessions
+        data_tests: [not_null]

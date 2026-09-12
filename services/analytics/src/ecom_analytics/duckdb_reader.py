@@ -36,6 +36,15 @@ class DuckDBReader:
         path: Location of the DuckDB file dbt writes.
     """
 
+    #: Schema the marts live in.
+    #:
+    #: dbt composes this from the target schema (`main`) and the model group's
+    #: `+schema: marts`, giving `main_marts`. Querying the tables unqualified
+    #: resolves against `main` and fails with "table does not exist", which
+    #: looks exactly like "dbt has not run yet" and sends you looking in the
+    #: wrong place entirely.
+    MARTS_SCHEMA = "main_marts"
+
     def __init__(self, path: str) -> None:
         """Store the file path. No connection is opened yet.
 
@@ -118,7 +127,7 @@ class DuckDBReader:
                    orders          AS orders,
                    revenue_cents   AS revenue_cents,
                    avg_order_value_cents
-              FROM mart_daily_revenue
+              FROM main_marts.mart_daily_revenue
              WHERE order_day >= CURRENT_DATE - CAST(? AS INTEGER)
              ORDER BY order_day
             """,
@@ -140,7 +149,7 @@ class DuckDBReader:
                    sku,
                    units_sold,
                    revenue_cents
-              FROM mart_product_performance
+              FROM main_marts.mart_product_performance
              ORDER BY revenue_cents DESC
              LIMIT ?
             """,
@@ -160,7 +169,7 @@ class DuckDBReader:
                    SUM(lifetime_value_cents)        AS lifetime_value_cents,
                    CAST(AVG(lifetime_value_cents) AS BIGINT) AS avg_lifetime_value_cents,
                    COUNT(*) FILTER (WHERE orders > 1) AS repeat_customers
-              FROM mart_customer_value
+              FROM main_marts.mart_customer_value
             """
         )
         return rows[0] if rows else {}
