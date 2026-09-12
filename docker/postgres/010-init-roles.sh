@@ -77,10 +77,10 @@ CREATE SCHEMA payments      AUTHORIZATION svc_payments;
 CREATE SCHEMA analytics     AUTHORIZATION svc_analytics;
 CREATE SCHEMA notifications AUTHORIZATION svc_notifications;
 
--- dbt's own output schemas: raw-ish staging models, then the marts the admin
--- dashboard reads.
-CREATE SCHEMA analytics_stg   AUTHORIZATION dbt_runner;
-CREATE SCHEMA analytics_marts AUTHORIZATION dbt_runner;
+-- dbt gets no schema of its own in Postgres. It reads these tables through
+-- DuckDB's postgres extension and materialises its models into a DuckDB file
+-- instead, so the analytical scans never touch the database that checkout
+-- depends on. Its Postgres role therefore needs SELECT and nothing else.
 
 -- ---------------------------------------------------------------------------
 -- Connect privilege. Everyone needs it; nobody had it after the REVOKE above.
@@ -113,21 +113,14 @@ ALTER DEFAULT PRIVILEGES FOR ROLE svc_payments      IN SCHEMA payments      GRAN
 ALTER DEFAULT PRIVILEGES FOR ROLE svc_analytics     IN SCHEMA analytics     GRANT SELECT ON TABLES TO dbt_runner;
 
 -- ---------------------------------------------------------------------------
--- The analytics service reads the marts dbt produces, so the admin dashboard
--- can serve aggregates without ever touching a transactional table.
--- ---------------------------------------------------------------------------
-GRANT USAGE ON SCHEMA analytics_marts TO svc_analytics;
-GRANT SELECT ON ALL TABLES IN SCHEMA analytics_marts TO svc_analytics;
-ALTER DEFAULT PRIVILEGES FOR ROLE dbt_runner IN SCHEMA analytics_marts
-    GRANT SELECT ON TABLES TO svc_analytics;
-
--- ---------------------------------------------------------------------------
 -- Deliberate non-grants, stated explicitly so the intent is auditable:
 --
 --   * No service can read another service's schema. Cross-service data is
 --     fetched over HTTP, where it is authorised and logged.
---   * dbt_runner has SELECT only. It cannot INSERT, UPDATE or DELETE anything
---     in a transactional schema, so a broken model can never corrupt an order.
+--   * dbt_runner has SELECT only, on every schema, with no CREATE anywhere. It
+--     cannot INSERT, UPDATE or DELETE anything, so a broken model or a
+--     mistyped `dbt run --full-refresh` can never touch an order. Its output
+--     goes to DuckDB, which is a separate file it owns entirely.
 --   * No role has SUPERUSER or CREATEDB.
 -- ---------------------------------------------------------------------------
 SQL

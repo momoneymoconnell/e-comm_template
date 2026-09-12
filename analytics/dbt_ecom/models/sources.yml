@@ -1,0 +1,115 @@
+# =============================================================================
+# The transactional tables dbt reads.
+#
+# `database: pg` is the alias the Postgres attachment was given in
+# profiles.yml, so `{{ source('orders', 'orders') }}` compiles to
+# `pg.orders.orders` and reads live Postgres through DuckDB.
+#
+# Declaring sources rather than writing table names into models is what makes
+# `dbt docs` able to draw the lineage graph, and what lets `dbt build` fail
+# fast with a clear message when an upstream table is missing.
+# =============================================================================
+version: 2
+
+sources:
+  - name: auth
+    database: pg
+    schema: auth
+    description: Accounts and sessions, owned by the auth service.
+    tables:
+      - name: users
+        description: >
+          One row per account. dbt has SELECT only; the password_hash column is
+          readable but is never selected by any model here, and must not be.
+        columns:
+          - name: id
+            description: Primary key.
+            data_tests: [unique, not_null]
+          - name: email
+            description: Case-insensitive address.
+            data_tests: [not_null]
+
+  - name: catalog
+    database: pg
+    schema: catalog
+    description: Products, variants and inventory.
+    tables:
+      - name: products
+        description: One row per product shown on the storefront.
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+          - name: status
+            description: draft, active or archived.
+            data_tests:
+              - accepted_values:
+                  arguments:
+                      values: ["draft", "active", "archived"]
+      - name: product_variants
+        description: The purchasable unit, holding price and stock.
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+          - name: sku
+            data_tests: [unique, not_null]
+
+  - name: orders
+    database: pg
+    schema: orders
+    description: Carts and orders.
+    tables:
+      - name: orders
+        description: One row per placed order.
+        # Freshness is how you find out that ingest has silently stopped.
+        # Without it, a broken checkout shows up as a dashboard that is merely
+        # flat, which looks like a quiet week rather than an outage.
+        loaded_at_field: created_at
+        freshness:
+          warn_after: {count: 24, period: hour}
+          error_after: {count: 72, period: hour}
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+          - name: order_number
+            data_tests: [unique, not_null]
+          - name: status
+            data_tests:
+              - accepted_values:
+                  arguments:
+                      values:
+                        ["pending_payment", "paid", "fulfilled", "delivered",
+                         "cancelled", "refunded"]
+      - name: order_items
+        description: Purchased lines, snapshotted at the time of purchase.
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+
+  - name: payments
+    database: pg
+    schema: payments
+    description: Stripe payment records. Contains no card data.
+    tables:
+      - name: payments
+        columns:
+          - name: id
+            data_tests: [unique, not_null]
+          - name: payment_intent_id
+            data_tests: [unique, not_null]
+      - name: refunds
+
+  - name: analytics
+    database: pg
+    schema: analytics
+    description: Pseudonymised traffic events.
+    tables:
+      - name: events
+        description: >
+          Visitor actions. Contains no raw IP, full user agent or query string;
+          visitors are a salted hash whose salt rotates daily.
+        loaded_at_field: occurred_at
+        freshness:
+          warn_after: {count: 12, period: hour}
+        columns:
+          - name: id
+            data_tests: [unique, not_null]

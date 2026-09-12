@@ -1,0 +1,49 @@
+# =============================================================================
+# dbt project for the analytics layer.
+#
+# Scope note, because "dbt" and "migrations" get conflated: dbt does NOT manage
+# the application schema. Alembic owns that - creating tables, adding columns,
+# backfilling data, everything that must preserve what is already there.
+#
+# dbt owns the layer above: it reads those tables and builds derived,
+# analytical models from them. It never issues a data-preserving DDL change,
+# because every model it manages is disposable and fully rebuilt on each run.
+#
+# The split matters. Point dbt at your `orders` table and the first
+# `dbt run --full-refresh` drops it.
+# =============================================================================
+name: "ecom"
+version: "1.0.0"
+config-version: 2
+
+profile: "ecom"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+
+target-path: "target"
+clean-targets: ["target", "dbt_packages"]
+
+models:
+  ecom:
+    staging:
+      # Views: cheap to build, always current, and they only rename and cast.
+      # Materialising them as tables would double the storage and add a
+      # rebuild step for no benefit.
+      +materialized: view
+      +schema: staging
+    marts:
+      # Tables: these aggregate across millions of rows, and the admin
+      # dashboard reads them on every page load. Computing that per request
+      # would make the dashboard slow and pointless.
+      +materialized: table
+      +schema: marts
+
+# Fail a run if a model has no description. Undocumented analytics tables are
+# how an organisation ends up with four different definitions of "revenue".
+require-dbt-version: [">=1.9.0", "<2.0.0"]
+
+flags:
+  send_anonymous_usage_stats: false
