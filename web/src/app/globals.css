@@ -242,18 +242,42 @@ body {
   height: 190px;
   overflow: hidden;
   pointer-events: none;
-  /* Opaque nearest the viewer and still largely opaque at the horizon line,
-     so the skyline has lights to stand on. Fading from the very top, as an
-     earlier version did, left a dead band between the buildings and the first
-     visible dots. */
-  mask-image: linear-gradient(to top, black 0%, black 55%, transparent 100%);
-  -webkit-mask-image: linear-gradient(to top, black 0%, black 55%, transparent 100%);
+  /* Fades the floor out as it reaches the horizon.
+     The stops look low because they are measured against the box, not against
+     the floor. The pseudo-element is only deep enough to project about 33px up
+     from the bottom of this box - roughly 17% - so the old 55%/100% pair never
+     came into play at all and the floor simply stopped dead on a hard
+     horizontal edge. That edge is invisible on the slanted lines, which
+     antialias away to nothing before they reach it, but the three near the
+     middle run almost straight up, stay crisp the whole way, and ended in a cut.
+     Fading over the real extent kills the cut. */
+  mask-image: linear-gradient(to top, black 0%, black 12%, transparent 17.5%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, black 12%, transparent 17.5%);
 }
 
 .horizon-grid::before {
   content: "";
   position: absolute;
   inset: -60% -60% -10% -60%;
+  /* Breaks the streets into dots.
+     Every line in this grid is meant to read as a row of lights, and most of
+     them do - but only by accident. A line that leans is rasterised across two
+     pixel columns and antialiasing chops it into dashes for free. The three
+     lines nearest the middle run almost exactly vertical, land on a single
+     column, and come out as unbroken hairlines that do not match anything
+     around them.
+     Dashing them deliberately makes every street behave the same way. The
+     period is the 46px of the depth lines below and the mask is applied before
+     the transform, so each dash sits on a rung of the lattice and foreshortens
+     along with it: the dots crowd together and fade out toward the horizon on
+     their own. The depth lines themselves sit at the start of each period and
+     so survive the mask untouched. */
+  mask-image: repeating-linear-gradient(0deg, black 0 18px, transparent 18px 46px);
+  -webkit-mask-image: repeating-linear-gradient(
+    0deg,
+    black 0 18px,
+    transparent 18px 46px
+  );
   background-image:
     /* 1.9231% - not the 62px this used to be.
        The streets have to line up with the gaps between the city blocks in
@@ -267,7 +291,9 @@ body {
        from. */
     repeating-linear-gradient(
       90deg,
-      color-mix(in srgb, var(--color-neon) 46%, transparent) 0 1px,
+      /* 72%, up from 46%. The mask above keeps only 18px of every 46px, so
+         at the old value the whole floor came out visibly dimmer. */
+      color-mix(in srgb, var(--color-neon) 72%, transparent) 0 1px,
       transparent 1px 1.9231%
     ),
     repeating-linear-gradient(
