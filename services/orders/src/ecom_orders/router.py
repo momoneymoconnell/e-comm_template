@@ -87,19 +87,34 @@ async def get_cart(
     db: Db,
     settings: Settings,
     catalog: Catalog,
+    code: Annotated[str | None, Query(max_length=40)] = None,
 ) -> CartResponse:
     """Return the caller's cart, priced against the live catalogue.
 
     Works signed in or as a guest. Prices are fetched fresh on every call
     rather than stored on the cart, so a cart opened last week reflects today's
     prices and today's availability.
+
+    An optional `code` previews a discount. It is not stored on the cart: the
+    client holds it and sends it again at checkout, where it is re-validated.
+    Keeping it out of the database means a code cannot go stale between the
+    cart and the order, and there is no state to clean up when a shopper
+    changes their mind.
     """
     token = _issue_cart_token(response, settings, _read_cart_token(request))
     cart = await service.get_or_create_cart(
         db, user_id=identity.user_id if identity else None, guest_token=token
     )
-    priced = await service.price_cart(cart, catalog, settings)
-    return CartResponse.model_validate(priced)
+
+    preview = await service.price_cart(cart, catalog, settings)
+    discount, amount, error = await service.resolve_discount(db, code, preview["subtotal_cents"])
+    if discount is not None:
+        preview = await service.price_cart(
+            cart, catalog, settings, discount_cents=amount, discount_code=discount.code
+        )
+    preview["discount_error"] = error
+
+    return CartResponse.model_validate(preview)
 
 
 @router.post(
@@ -224,6 +239,7 @@ async def checkout(
         settings=settings,
         catalog=catalog,
         payments=payments,
+        discount_code=payload.discount_code,
     )
 
     return CheckoutResponse(

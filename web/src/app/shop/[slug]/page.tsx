@@ -24,9 +24,27 @@ export async function generateMetadata({
   const { slug } = await params;
   const product = await serverFetch<Product>(`/catalog/products/${slug}`);
   if (!product) return { title: "Not found" };
+  const image = product.images?.[0]?.url ?? product.imageUrl;
+  const description =
+    product.subtitle ?? product.description?.slice(0, 150) ?? undefined;
+
   return {
     title: product.title,
-    description: product.subtitle ?? product.description?.slice(0, 150) ?? undefined,
+    description,
+    // Open Graph controls how the page looks when someone pastes the link into
+    // a chat or posts it. Without it the preview is a bare URL, which converts
+    // noticeably worse than a card with a picture and a price.
+    openGraph: {
+      title: product.title,
+      description,
+      type: "website",
+      images: image ? [{ url: mediaUrl(image) ?? "" }] : undefined,
+    },
+    twitter: {
+      card: image ? "summary_large_image" : "summary",
+      title: product.title,
+      description,
+    },
   };
 }
 
@@ -48,6 +66,14 @@ export default async function ProductPage({
   // products created before uploads existed still render.
   const hero = product.images?.[0];
   const heroUrl = mediaUrl(hero?.url ?? product.imageUrl);
+
+  // The variant a search result should quote: the one a shopper would actually
+  // pay least for.
+  const cheapest = product.variants.reduce<(typeof product.variants)[number] | null>(
+    (lowest, variant) =>
+      lowest === null || variant.priceCents < lowest.priceCents ? variant : lowest,
+    null,
+  );
 
   return (
     <Container className="py-14">
@@ -146,6 +172,50 @@ export default async function ProductPage({
       </div>
 
       <ProductReviews slug={product.slug} />
+
+      {/*
+        Product structured data.
+
+        This is what lets a search result show a price, availability and a star
+        rating rather than just a title and a snippet. It is plain JSON-LD in a
+        script tag - no library, no build step.
+
+        Only emitted when there is a real price to state; incomplete structured
+        data is worse than none, because search engines will reject the whole
+        block and may distrust the page.
+      */}
+      {cheapest ? (
+        <script
+          type="application/ld+json"
+          // The payload is JSON.stringify of our own data, not user markup.
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify({
+              "@context": "https://schema.org",
+              "@type": "Product",
+              name: product.title,
+              description: product.description ?? product.subtitle ?? undefined,
+              sku: cheapest.sku,
+              image: heroUrl ? [heroUrl] : undefined,
+              offers: {
+                "@type": "Offer",
+                price: (cheapest.priceCents / 100).toFixed(2),
+                priceCurrency: cheapest.currency.toUpperCase(),
+                availability: cheapest.inStock
+                  ? "https://schema.org/InStock"
+                  : "https://schema.org/OutOfStock",
+              },
+              aggregateRating:
+                product.ratingCount > 0 && product.ratingAverage !== null
+                  ? {
+                      "@type": "AggregateRating",
+                      ratingValue: product.ratingAverage,
+                      reviewCount: product.ratingCount,
+                    }
+                  : undefined,
+            }),
+          }}
+        />
+      ) : null}
     </Container>
   );
 }

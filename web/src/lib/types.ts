@@ -171,6 +171,10 @@ export interface Cart {
   id: string;
   items: CartItem[];
   subtotalCents: number;
+  discountCents: number;
+  discountCode: string | null;
+  /** Why a submitted code was not applied, shown next to the input. */
+  discountError: string | null;
   taxCents: number;
   shippingCents: number;
   totalCents: number;
@@ -223,10 +227,16 @@ export interface Order {
   status: OrderStatus;
   email: string;
   subtotalCents: number;
+  discountCents: number;
+  discountCode: string | null;
   taxCents: number;
   shippingCents: number;
   totalCents: number;
   currency: string;
+  carrier: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  shippedAt: string | null;
   shippingAddress: Record<string, string>;
   billingAddress: Record<string, string>;
   items: OrderItem[];

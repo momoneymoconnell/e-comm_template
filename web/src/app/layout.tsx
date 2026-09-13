@@ -43,9 +43,13 @@ export const metadata: Metadata = {
     template: `%s · ${SITE_NAME}`,
   },
   description: "A full-stack e-commerce template.",
-  // Keeps this template out of search results until there is a real business
-  // behind it. Remove before launch, or every placeholder page gets indexed.
-  robots: { index: false, follow: false },
+  // Kept out of search results until there is a real business behind it.
+  // Flipped by NEXT_PUBLIC_ALLOW_INDEXING, the same switch robots.ts reads, so
+  // launching does not mean remembering to edit two files.
+  robots:
+    process.env.NEXT_PUBLIC_ALLOW_INDEXING === "true"
+      ? { index: true, follow: true }
+      : { index: false, follow: false },
 };
 
 export const viewport: Viewport = {

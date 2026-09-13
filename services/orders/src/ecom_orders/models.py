@@ -26,6 +26,7 @@ from typing import Any
 
 from ecom_shared.db import build_metadata, utcnow_sql
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     DateTime,
     ForeignKey,
@@ -200,6 +201,10 @@ class Order(Base):
     )
 
     subtotal_cents: Mapped[int] = mapped_column(Integer, nullable=False)
+    discount_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    #: The code as typed, snapshotted. Not a foreign key: a code can be deleted
+    #: or its value changed, and the order must still show what was applied.
+    discount_code: Mapped[str | None] = mapped_column(String(40))
     tax_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     shipping_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     total_cents: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -215,8 +220,15 @@ class Order(Base):
     payment_intent_id: Mapped[str | None] = mapped_column(String(120), unique=True)
     cart_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
 
+    #: Fulfilment. Set when an admin marks the order shipped; the shipped
+    #: email's tracking link was previously always empty because nothing ever
+    #: filled these in.
+    carrier: Mapped[str | None] = mapped_column(String(60))
+    tracking_number: Mapped[str | None] = mapped_column(String(120))
+
     placed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    shipped_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     created_at: Mapped[datetime] = mapped_column(
@@ -242,8 +254,13 @@ class Order(Base):
         # The arithmetic must hold at the storage layer. A bug in the checkout
         # calculation should fail loudly on insert rather than quietly charge
         # the wrong amount.
+        CheckConstraint("discount_cents >= 0", name="discount_non_negative"),
+        # A discount can never exceed the goods it applies to. Without this a
+        # bad percentage calculation could produce a negative subtotal and a
+        # refund-shaped order.
+        CheckConstraint("discount_cents <= subtotal_cents", name="discount_within_subtotal"),
         CheckConstraint(
-            "total_cents = subtotal_cents + tax_cents + shipping_cents",
+            "total_cents = subtotal_cents - discount_cents + tax_cents + shipping_cents",
             name="total_is_sum_of_parts",
         ),
         Index("ix_orders_user_created", "user_id", "created_at"),
@@ -324,3 +341,103 @@ class OrderEvent(Base):
     order: Mapped[Order] = relationship(back_populates="events")
 
     __table_args__ = (Index("ix_order_events_order_time", "order_id", "created_at"),)
+
+
+#: How a discount reduces an order.
+#:
+#: ``percent`` takes a share of the subtotal; ``fixed`` takes a flat amount.
+#: Both are stored as integers - a percentage in basis points, a fixed amount
+#: in minor units - so no discount calculation ever touches a float.
+DISCOUNT_KINDS = ("percent", "fixed")
+
+
+class DiscountCode(Base):
+    """A promotional code.
+
+    Attributes:
+        code: What the customer types. `CITEXT`, so ``WELCOME10`` and
+            ``welcome10`` are the same code; expecting shoppers to match case
+            is a support ticket generator.
+        kind: See `DISCOUNT_KINDS`.
+        value: Basis points for ``percent`` (1000 = 10%), minor units for
+            ``fixed``. Basis points rather than whole percents so 12.5% is
+            expressible without a decimal.
+        max_uses: Total redemptions allowed across all customers, or ``NULL``
+            for unlimited.
+        used_count: Redemptions so far. Incremented inside the checkout
+            transaction, so a code limited to 100 uses cannot be redeemed 150
+            times by simultaneous checkouts.
+        min_subtotal_cents: Order must reach this before the code applies.
+    """
+
+    __tablename__ = "discount_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    code: Mapped[str] = mapped_column(CITEXT, nullable=False, unique=True, index=True)
+    description: Mapped[str | None] = mapped_column(String(200))
+
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    value: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    min_subtotal_cents: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    max_uses: Mapped[int | None] = mapped_column(Integer)
+    used_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    starts_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ends_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=utcnow_sql()
+    )
+
+    __table_args__ = (
+        CheckConstraint(f"kind IN {DISCOUNT_KINDS}", name="kind_valid"),
+        CheckConstraint("value > 0", name="value_positive"),
+        # A percentage over 100% would make the order negative.
+        CheckConstraint("kind <> 'percent' OR value <= 10000", name="percent_within_range"),
+        CheckConstraint("used_count >= 0", name="used_count_non_negative"),
+        CheckConstraint("max_uses IS NULL OR used_count <= max_uses", name="uses_within_limit"),
+        Index("ix_discount_codes_active", "is_active", "ends_at"),
+    )
+
+    def is_redeemable_at(self, moment: datetime) -> tuple[bool, str]:
+        """Whether the code can be used right now, and why not if it cannot.
+
+        Args:
+            moment: The time to evaluate against.
+
+        Returns:
+            ``(usable, reason)``. The reason is written for the shopper, and is
+            deliberately vague about *why* an expired code is expired - listing
+            exact windows and usage counts invites probing.
+        """
+        if not self.is_active:
+            return False, "That code is not valid."
+        if self.starts_at is not None and moment < self.starts_at:
+            return False, "That code is not active yet."
+        if self.ends_at is not None and moment > self.ends_at:
+            return False, "That code has expired."
+        if self.max_uses is not None and self.used_count >= self.max_uses:
+            return False, "That code has been fully redeemed."
+        return True, ""
+
+    def amount_for(self, subtotal_cents: int) -> int:
+        """Compute the discount this code gives on a subtotal.
+
+        Args:
+            subtotal_cents: The order subtotal in minor units.
+
+        Returns:
+            The reduction in minor units, never more than the subtotal itself.
+        """
+        if self.kind == "percent":
+            # Integer maths throughout: basis points times cents, divided by
+            # 10000. Floats here would eventually produce a total that does not
+            # match the sum of its parts, and a CHECK constraint would reject it.
+            amount = subtotal_cents * self.value // 10_000
+        else:
+            amount = self.value
+        return max(0, min(amount, subtotal_cents))
