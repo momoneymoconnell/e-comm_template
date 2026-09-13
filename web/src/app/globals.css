@@ -255,10 +255,20 @@ body {
   position: absolute;
   inset: -60% -60% -10% -60%;
   background-image:
+    /* 1.9231% - not the 62px this used to be.
+       The streets have to line up with the gaps between the city blocks in
+       skyline.tsx, and that SVG scales with the viewport. A pitch fixed in
+       pixels drifts out of step as the window is resized and can only ever
+       agree at one width. As a fraction it tracks. The number is 0.5/26: the
+       pseudo-element runs from -60% to 160% of the container, so the centre
+       line sits 1.1 container-widths in, and 26 whole intervals landing exactly
+       there is what puts a street down the middle of the picture. It works out
+       at 61px on a 1440px screen, which is where the old fixed value came
+       from. */
     repeating-linear-gradient(
       90deg,
       color-mix(in srgb, var(--color-neon) 46%, transparent) 0 1px,
-      transparent 1px 62px
+      transparent 1px 1.9231%
     ),
     repeating-linear-gradient(
       0deg,
