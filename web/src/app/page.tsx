@@ -150,7 +150,7 @@ function Hero() {
           left an obvious dead gap between the buildings and the first dots. */}
       <div className="relative">
         <div aria-hidden className="horizon-grid" />
-        <div className="absolute inset-x-0 bottom-[30px]">
+        <div className="absolute inset-x-0 bottom-[26px]">
           <Skyline />
         </div>
       </div>
