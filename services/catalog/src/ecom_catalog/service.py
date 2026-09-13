@@ -74,7 +74,11 @@ async def list_products(
     result = await session.execute(
         select(Product)
         .where(*conditions)
-        .options(selectinload(Product.variants), selectinload(Product.category))
+        .options(
+            selectinload(Product.variants),
+            selectinload(Product.category),
+            selectinload(Product.images),
+        )
         .order_by(Product.position, Product.created_at.desc())
         .offset(params.offset)
         .limit(params.limit)
@@ -107,7 +111,11 @@ async def get_product_by_slug(
     result = await session.execute(
         select(Product)
         .where(*conditions)
-        .options(selectinload(Product.variants), selectinload(Product.category))
+        .options(
+            selectinload(Product.variants),
+            selectinload(Product.category),
+            selectinload(Product.images),
+        )
     )
     product = result.scalar_one_or_none()
     if product is None:
@@ -328,7 +336,7 @@ async def create_product(session: AsyncSession, payload: ProductWrite) -> Produc
             details={"slug": payload.slug},
         ) from exc
 
-    await session.refresh(product, ["variants", "category"])
+    await session.refresh(product, ["variants", "category", "images"])
     return product
 
 
@@ -365,7 +373,7 @@ async def update_product(session: AsyncSession, product_id: UUID, payload: Produ
         await session.rollback()
         raise ConflictError("That product slug is already in use.") from exc
 
-    await session.refresh(product, ["variants", "category"])
+    await session.refresh(product, ["variants", "category", "images"])
     return product
 
 
@@ -435,7 +443,7 @@ async def replace_variants(
         removed.is_active = False
 
     await session.flush()
-    await session.refresh(product, ["variants", "category"])
+    await session.refresh(product, ["variants", "category", "images"])
     return product
 
 

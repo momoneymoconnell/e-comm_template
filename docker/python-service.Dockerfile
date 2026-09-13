@@ -95,6 +95,14 @@ COPY --chown=app:app docker/entrypoint.sh /app/entrypoint.sh
 
 RUN chmod +x /app/entrypoint.sh
 
+# Create the data directory in the image, owned by the runtime user.
+#
+# Docker seeds a new named volume from whatever is at the mount point in the
+# image, ownership included. Without this the volume is created root-owned, and
+# a service running as `app` cannot write its first upload - which surfaces as a
+# permission error on a code path that works perfectly outside Docker.
+RUN mkdir -p /data/media && chown -R app:app /data
+
 USER app
 
 EXPOSE 8000

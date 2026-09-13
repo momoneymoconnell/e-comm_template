@@ -12,7 +12,7 @@ import Link from "next/link";
 
 import { AddToCart } from "@/components/add-to-cart";
 import { Container, Meander } from "@/components/ui";
-import { serverFetch } from "@/lib/api";
+import { mediaUrl, serverFetch } from "@/lib/api";
 import type { Product } from "@/lib/types";
 
 export async function generateMetadata({
@@ -43,6 +43,11 @@ export default async function ProductPage({
   // needing to know the difference.
   if (!product) notFound();
 
+  // Prefer the gallery; `imageUrl` is the legacy single-image column, kept so
+  // products created before uploads existed still render.
+  const hero = product.images?.[0];
+  const heroUrl = mediaUrl(hero?.url ?? product.imageUrl);
+
   return (
     <Container className="py-14">
       <nav aria-label="Breadcrumb" className="mb-8 text-xs text-faint">
@@ -66,11 +71,11 @@ export default async function ProductPage({
 
       <div className="grid gap-10 lg:grid-cols-2 lg:gap-14">
         <div className="surface relative aspect-square overflow-hidden">
-          {product.imageUrl ? (
+          {heroUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={product.imageUrl}
-              alt={product.title}
+              src={heroUrl}
+              alt={hero?.alt ?? product.title}
               className="h-full w-full object-cover"
             />
           ) : (
@@ -87,6 +92,20 @@ export default async function ProductPage({
         </div>
 
         <div>
+          {product.images && product.images.length > 1 ? (
+            <div className="mb-6 grid grid-cols-4 gap-2 lg:hidden">
+              {product.images.slice(1, 5).map((image) => (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={image.id}
+                  src={mediaUrl(image.thumbUrl) ?? ""}
+                  alt={image.alt ?? ""}
+                  className="aspect-square w-full rounded-md border border-edge object-cover"
+                />
+              ))}
+            </div>
+          ) : null}
+
           {product.category ? (
             <p className="inscription text-[0.64rem] text-cyan/80">
               {product.category.name}

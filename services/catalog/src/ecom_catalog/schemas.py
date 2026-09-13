@@ -41,6 +41,39 @@ class AdminVariantResponse(VariantResponse):
     weight_grams: int | None
 
 
+class MediaResponse(ApiModel):
+    """An uploaded image in the media library.
+
+    Attributes:
+        url: Where to fetch the full-size image.
+        thumb_url: Where to fetch the thumbnail. Use this in grids; serving a
+            1600px image into a 200px box is the most common reason a product
+            listing is slow.
+    """
+
+    id: UUID
+    url: str
+    thumb_url: str
+    original_name: str | None
+    width: int
+    height: int
+    size_bytes: int
+    created_at: datetime
+
+
+class ProductImageResponse(ApiModel):
+    """One image in a product's gallery."""
+
+    id: UUID
+    media_id: UUID
+    url: str
+    thumb_url: str
+    alt: str | None
+    position: int
+    width: int
+    height: int
+
+
 class CategorySummary(ApiModel):
     """A category, flattened for embedding in a product response."""
 
@@ -61,13 +94,51 @@ class ProductResponse(ApiModel):
     image_url: str | None
     category: CategorySummary | None
     variants: list[VariantResponse]
+    images: list[ProductImageResponse] = Field(default_factory=list)
     created_at: datetime
+
+    @property
+    def primary_image_url(self) -> str | None:
+        """The image to show in a listing.
+
+        Prefers the gallery, falling back to the legacy `image_url` column so
+        products created before uploads existed still render.
+        """
+        if self.images:
+            return self.images[0].url
+        return self.image_url
 
     @property
     def from_price_cents(self) -> int | None:
         """Cheapest variant price, for a "from $X" label."""
         prices = [v.price_cents for v in self.variants]
         return min(prices) if prices else None
+
+
+class AdminProductResponse(ApiModel):
+    """A product as an admin sees it.
+
+    The same fields as `ProductResponse` except that variants carry their real
+    stock levels and active flags. The admin editor needs those: loading a
+    product through the public schema and saving it back would write every
+    stock count to zero, because the field simply is not there to read.
+
+    Declared separately rather than subclassing `ProductResponse` and narrowing
+    `variants`. A subclass that changes a field's type is not substitutable for
+    its parent, and a type checker is right to reject it.
+    """
+
+    id: UUID
+    slug: str
+    title: str
+    subtitle: str | None
+    description: str | None
+    status: str
+    image_url: str | None
+    category: CategorySummary | None
+    variants: list[AdminVariantResponse]
+    images: list[ProductImageResponse] = Field(default_factory=list)
+    created_at: datetime
 
 
 class CategoryResponse(ApiModel):
@@ -188,3 +259,32 @@ class InventoryRequest(ApiModel):
     """Reserve or release stock for several variants at once."""
 
     lines: list[InventoryLine] = Field(min_length=1, max_length=100)
+
+
+# -----------------------------------------------------------------------------
+# Gallery management
+# -----------------------------------------------------------------------------
+
+
+class AttachImageRequest(ApiModel):
+    """Add an already-uploaded image to a product's gallery."""
+
+    media_id: UUID
+    alt: str | None = Field(default=None, max_length=300)
+
+
+class ReorderImagesRequest(ApiModel):
+    """Set the gallery order.
+
+    The whole list is sent rather than a pair of indices, because a reorder is
+    one atomic intent and applying it as a sequence of swaps leaves the gallery
+    in a broken order if any single call fails.
+    """
+
+    image_ids: list[UUID] = Field(min_length=1, max_length=24)
+
+
+class UpdateImageRequest(ApiModel):
+    """Edit an image's alternative text."""
+
+    alt: str | None = Field(default=None, max_length=300)

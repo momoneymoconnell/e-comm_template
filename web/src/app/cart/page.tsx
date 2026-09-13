@@ -20,6 +20,7 @@ import {
   Panel,
   SectionTitle,
 } from "@/components/ui";
+import { mediaUrl } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 
 export default function CartPage() {
@@ -93,7 +94,11 @@ export default function CartPage() {
               <div className="h-20 w-20 shrink-0 overflow-hidden rounded-md border border-edge bg-night">
                 {item.imageUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.imageUrl} alt="" className="h-full w-full object-cover" />
+                  <img
+                    src={mediaUrl(item.imageUrl) ?? ""}
+                    alt=""
+                    className="h-full w-full object-cover"
+                  />
                 ) : (
                   <div aria-hidden className="vapor-sun m-4 h-12 w-12 rounded-full opacity-60" />
                 )}

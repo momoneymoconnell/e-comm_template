@@ -16,9 +16,35 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ecom_catalog import service
 from ecom_catalog.deps import get_db
+from ecom_catalog.models import Product
 from ecom_catalog.schemas import CategoryResponse, ProductResponse
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+
+def to_public(product: Product) -> ProductResponse:
+    """Build the storefront view of a product, hiding inactive variants.
+
+    Replacing a product's variants deactivates the ones that were dropped
+    rather than deleting them, because order lines still reference those rows.
+    They must not appear in the shop, though - without this filter, editing a
+    product leaves its removed options on sale, which is how a customer ends up
+    buying something that no longer exists.
+
+    Filtering happens on the ORM object rather than the response model, because
+    `is_active` is deliberately absent from the public variant schema.
+
+    Args:
+        product: The loaded product, with variants and images.
+
+    Returns:
+        The response with only purchasable variants.
+    """
+    response = ProductResponse.model_validate(product)
+    sellable = {variant.id for variant in product.variants if variant.is_active}
+    response.variants = [variant for variant in response.variants if variant.id in sellable]
+    return response
+
 
 Db = Annotated[AsyncSession, Depends(get_db)]
 PageQuery = Annotated[PageParams, Depends()]
@@ -49,7 +75,7 @@ async def list_products(
     products, total = await service.list_products(
         db, params, category_slug=category, search=search, status="active"
     )
-    items = [ProductResponse.model_validate(p) for p in products]
+    items = [to_public(p) for p in products]
     return Page[ProductResponse].build(items, total, params)
 
 
@@ -61,7 +87,7 @@ async def get_product(slug: str, db: Db) -> ProductResponse:
     is not confirmed to someone guessing URLs.
     """
     product = await service.get_product_by_slug(db, slug, only_active=True)
-    return ProductResponse.model_validate(product)
+    return to_public(product)
 
 
 @router.get("/categories", response_model=list[CategoryResponse], summary="List categories")
