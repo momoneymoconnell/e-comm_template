@@ -101,6 +101,29 @@ export interface ProductImage {
   height: number;
 }
 
+export interface Review {
+  id: string;
+  authorName: string;
+  rating: number;
+  title: string | null;
+  body: string;
+  isVerifiedPurchase: boolean;
+  createdAt: string;
+}
+
+export interface AdminReview extends Review {
+  productId: string;
+  userId: string;
+  status: "published" | "hidden";
+}
+
+export interface RatingSummary {
+  /** Null when nothing has been reviewed; 0 would render as an empty star row. */
+  average: number | null;
+  count: number;
+  breakdown: Record<number, number>;
+}
+
 export interface Category {
   id: string;
   slug: string;
@@ -123,6 +146,8 @@ export interface Product {
   variants: Variant[];
   /** Gallery, in display order. The first image is used in listings. */
   images: ProductImage[];
+  ratingAverage: number | null;
+  ratingCount: number;
   createdAt: string;
 }
 

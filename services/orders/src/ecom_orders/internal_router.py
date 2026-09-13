@@ -16,7 +16,13 @@ from fastapi import APIRouter
 
 from ecom_orders import service
 from ecom_orders.deps import Catalog, Db, Notifications
-from ecom_orders.schemas import MarkPaidRequest, OrderResponse, PaymentFailedRequest
+from ecom_orders.schemas import (
+    MarkPaidRequest,
+    OrderResponse,
+    PaymentFailedRequest,
+    PurchaseCheckRequest,
+    PurchaseCheckResponse,
+)
 
 log = get_logger(__name__)
 
@@ -77,3 +83,37 @@ async def payment_failed(
         log.info("payment_failed_no_action", caller=caller, intent=payload.payment_intent_id)
         return Message(message="No action taken.")
     return Message(message=f"Order {order.order_number} cancelled.")
+
+
+@router.post(
+    "/purchases/check",
+    response_model=PurchaseCheckResponse,
+    summary="Has this customer bought any of these variants?",
+)
+async def check_purchase(
+    payload: PurchaseCheckRequest, caller: ServiceCaller, db: Db
+) -> PurchaseCheckResponse:
+    """Report whether the customer has a paid order containing any variant.
+
+    Only orders that actually reached a paid state count. A pending order
+    proves nothing - anyone can start a checkout - and a cancelled one proves
+    less than nothing.
+    """
+    from sqlalchemy import select
+
+    from ecom_orders.models import Order, OrderItem
+
+    result = await db.execute(
+        select(Order.paid_at)
+        .join(OrderItem, OrderItem.order_id == Order.id)
+        .where(
+            Order.user_id == payload.user_id,
+            Order.status.in_(("paid", "fulfilled", "delivered")),
+            OrderItem.variant_id.in_(payload.variant_ids),
+        )
+        .order_by(Order.paid_at)
+        .limit(1)
+    )
+    first = result.scalar_one_or_none()
+    log.info("purchase_check", caller=caller, purchased=first is not None)
+    return PurchaseCheckResponse(purchased=first is not None, first_purchased_at=first)

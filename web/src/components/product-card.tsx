@@ -4,6 +4,7 @@
 
 import Link from "next/link";
 
+import { RatingBadge } from "@/components/reviews";
 import { mediaUrl } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 import type { Product } from "@/lib/types";
@@ -70,6 +71,8 @@ export function ProductCard({ product }: { product: Product }) {
         {product.subtitle ? (
           <p className="line-clamp-2 text-sm text-muted">{product.subtitle}</p>
         ) : null}
+
+        <RatingBadge average={product.ratingAverage} count={product.ratingCount} />
 
         <p className="mt-auto pt-3 text-sm text-gold">
           {fromPrice !== null ? (

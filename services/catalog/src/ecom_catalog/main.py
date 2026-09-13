@@ -13,6 +13,8 @@ from ecom_catalog.media import LocalMediaStorage
 from ecom_catalog.media_router import admin_router as media_admin_router
 from ecom_catalog.media_router import gallery_router
 from ecom_catalog.media_router import public_router as media_public_router
+from ecom_catalog.review_router import admin_router as review_admin_router
+from ecom_catalog.review_router import public_router as review_public_router
 from ecom_catalog.router import router as public_router
 
 log = get_logger(__name__)
@@ -39,6 +41,10 @@ app = create_service_app(
         media_public_router,
         media_admin_router,
         gallery_router,
+        review_admin_router,
+        # Before the public router: `/catalog/products/{slug}/reviews` must be
+        # matched before `/catalog/products/{slug}`.
+        review_public_router,
         admin_router,
         internal_router,
         public_router,
