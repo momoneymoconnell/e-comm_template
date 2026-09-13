@@ -260,23 +260,26 @@ body {
   position: absolute;
   inset: -60% -60% -10% -60%;
   /* Breaks the streets into dots.
-     Every line in this grid is meant to read as a row of lights, and most of
-     them do - but only by accident. A line that leans is rasterised across two
-     pixel columns and antialiasing chops it into dashes for free. The three
-     lines nearest the middle run almost exactly vertical, land on a single
-     column, and come out as unbroken hairlines that do not match anything
-     around them.
-     Dashing them deliberately makes every street behave the same way. The
-     period is the 46px of the depth lines below and the mask is applied before
-     the transform, so each dash sits on a rung of the lattice and foreshortens
-     along with it: the dots crowd together and fade out toward the horizon on
-     their own. The depth lines themselves sit at the start of each period and
-     so survive the mask untouched. */
-  mask-image: repeating-linear-gradient(0deg, black 0 18px, transparent 18px 46px);
+     Every line here is meant to read as a row of lights, and most of them do -
+     but only by accident. A line that leans is rasterised across two pixel
+     columns and antialiasing chops it into dots for free. The three nearest the
+     middle run almost exactly vertical, land on a single column, and came out
+     as unbroken hairlines that matched nothing around them.
+     Dashing deliberately makes every street behave the same way. The period is
+     11.5px - a quarter of the 46px rung spacing below, so the rungs still land
+     on a dash - and the mask is applied before the transform, so the dots
+     foreshorten with the floor and crowd together toward the horizon on their
+     own.
+     The period has to be this fine. At 46px the gaps came out 7px tall in the
+     foreground and the floor read as horizontal bands with the dots missing in
+     between, and out at the tails, where the lines lean hardest and antialiasing
+     has already thinned them, whole stretches disappeared. At a quarter of that
+     the dots sit about 3px apart and read as texture rather than as gaps. */
+  mask-image: repeating-linear-gradient(0deg, black 0 6px, transparent 6px 11.5px);
   -webkit-mask-image: repeating-linear-gradient(
     0deg,
-    black 0 18px,
-    transparent 18px 46px
+    black 0 6px,
+    transparent 6px 11.5px
   );
   background-image:
     /* 1.9231% - not the 62px this used to be.
@@ -291,14 +294,22 @@ body {
        from. */
     repeating-linear-gradient(
       90deg,
-      /* 72%, up from 46%. The mask above keeps only 18px of every 46px, so
-         at the old value the whole floor came out visibly dimmer. */
-      color-mix(in srgb, var(--color-neon) 72%, transparent) 0 1px,
+      /* 92%, up from 46%. The mask above throws away just under half of every
+         street, so at the old value the whole floor came out dimmer than it
+         was. Checked against the previous grid side by side, not guessed. */
+      color-mix(in srgb, var(--color-neon) 92%, transparent) 0 1px,
       transparent 1px 1.9231%
     ),
+    /* The rungs running across the floor. Magenta now, not cyan.
+       These are continuous lines rather than dots, so once the streets were
+       dashed they were the only unbroken thing left on the floor and the
+       nearest one - which is barely foreshortened and runs the full width -
+       stopped blending in and started reading as a stray green line lying in
+       the foreground. Same hue as everything else, and dropped to 24%, it goes
+       back to being structure rather than an object. */
     repeating-linear-gradient(
       0deg,
-      color-mix(in srgb, var(--color-cyan) 34%, transparent) 0 1px,
+      color-mix(in srgb, var(--color-neon) 24%, transparent) 0 1px,
       transparent 1px 46px
     );
   transform: perspective(340px) rotateX(72deg);
