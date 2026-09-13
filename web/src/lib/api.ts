@@ -33,6 +33,28 @@ export function apiBaseUrl(): string {
   return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
 }
 
+/**
+ * Resolve a media path returned by the API into a URL the browser can load.
+ *
+ * The catalog service returns image paths relative to the API, like
+ * `/api/catalog/media/abc.jpg`. The browser resolves a relative path against
+ * the page it is on - the web origin - not against the API, so on any setup
+ * where the two differ (which is every setup here, since the API is on its own
+ * port) the image silently 404s.
+ *
+ * Absolute URLs are passed through untouched, so a product whose image lives
+ * on a CDN still works.
+ *
+ * @param path - A media path or absolute URL from the API. May be null.
+ * @returns An absolute URL, or null.
+ */
+export function mediaUrl(path: string | null | undefined): string | null {
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path)) return path;
+  const base = apiBaseUrl();
+  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
 /** An error carrying the API's structured body. */
 export class ApiError extends Error {
   readonly status: number;

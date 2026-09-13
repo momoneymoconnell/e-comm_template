@@ -64,6 +64,8 @@ networks:
 volumes:
   postgres_data:
   duckdb_data:
+  # Uploaded product images. A volume, so they survive container rebuilds.
+  media_data:
 
 services:
   # ---------------------------------------------------------------------------
@@ -157,6 +159,10 @@ services:
       APP_MODULE: ecom_catalog.main:app
       POSTGRES_USER: svc_catalog
       POSTGRES_PASSWORD: ${SVC_CATALOG_DB_PASSWORD}
+      MEDIA_ROOT: /data/media
+      ORDERS_URL: http://orders:8000
+    volumes:
+      - media_data:/data/media
     ports: ["127.0.0.1:8002:8000"]
     depends_on:
       postgres: {condition: service_healthy}

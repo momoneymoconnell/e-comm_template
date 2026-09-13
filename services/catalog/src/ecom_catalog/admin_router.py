@@ -15,16 +15,17 @@ from ecom_shared.schemas import Message, Page, PageParams
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ecom_catalog import service
 from ecom_catalog.deps import get_db
 from ecom_catalog.models import Category, Product, ProductVariant
 from ecom_catalog.schemas import (
+    AdminProductResponse,
     AdminVariantResponse,
     CategoryResponse,
     CategoryWrite,
     ProductPatch,
-    ProductResponse,
     ProductWrite,
     VariantWrite,
 )
@@ -37,53 +38,80 @@ Db = Annotated[AsyncSession, Depends(get_db)]
 PageQuery = Annotated[PageParams, Depends()]
 
 
-@router.get("/products", response_model=Page[ProductResponse], summary="List all products")
+@router.get("/products", response_model=Page[AdminProductResponse], summary="List all products")
 async def list_products(
     admin: AdminUser,
     db: Db,
     params: PageQuery,
     status: Annotated[str | None, Query(pattern="^(draft|active|archived)$")] = None,
     search: Annotated[str | None, Query(max_length=200)] = None,
-) -> Page[ProductResponse]:
+) -> Page[AdminProductResponse]:
     """List products in every status, unlike the public endpoint."""
     products, total = await service.list_products(db, params, search=search, status=status)
-    items = [ProductResponse.model_validate(p) for p in products]
-    return Page[ProductResponse].build(items, total, params)
+    items = [AdminProductResponse.model_validate(p) for p in products]
+    return Page[AdminProductResponse].build(items, total, params)
+
+
+@router.get(
+    "/products/{product_id}", response_model=AdminProductResponse, summary="Get one product"
+)
+async def get_product(product_id: UUID, admin: AdminUser, db: Db) -> AdminProductResponse:
+    """Return a single product in any status, with variants and gallery.
+
+    Distinct from the public route, which looks up by slug and only ever
+    returns active products. The admin console edits by ID, because a slug can
+    be changed by the very form that is loading the record.
+    """
+    result = await db.execute(
+        select(Product)
+        .where(Product.id == product_id)
+        .options(
+            selectinload(Product.variants),
+            selectinload(Product.category),
+            selectinload(Product.images),
+        )
+    )
+    product = result.scalar_one_or_none()
+    if product is None:
+        raise NotFoundError("Product not found.")
+    return AdminProductResponse.model_validate(product)
 
 
 @router.post(
-    "/products", response_model=ProductResponse, status_code=201, summary="Create a product"
+    "/products", response_model=AdminProductResponse, status_code=201, summary="Create a product"
 )
-async def create_product(payload: ProductWrite, admin: AdminUser, db: Db) -> ProductResponse:
+async def create_product(payload: ProductWrite, admin: AdminUser, db: Db) -> AdminProductResponse:
     """Create a product together with its initial variants."""
     product = await service.create_product(db, payload)
-    return ProductResponse.model_validate(product)
+    return AdminProductResponse.model_validate(product)
 
 
-@router.patch("/products/{product_id}", response_model=ProductResponse, summary="Update a product")
+@router.patch(
+    "/products/{product_id}", response_model=AdminProductResponse, summary="Update a product"
+)
 async def update_product(
     product_id: UUID, payload: ProductPatch, admin: AdminUser, db: Db
-) -> ProductResponse:
+) -> AdminProductResponse:
     """Apply a partial update. Omitted fields are left untouched."""
     product = await service.update_product(db, product_id, payload)
-    return ProductResponse.model_validate(product)
+    return AdminProductResponse.model_validate(product)
 
 
 @router.put(
     "/products/{product_id}/variants",
-    response_model=ProductResponse,
+    response_model=AdminProductResponse,
     summary="Replace a product's variants",
 )
 async def replace_variants(
     product_id: UUID, payload: list[VariantWrite], admin: AdminUser, db: Db
-) -> ProductResponse:
+) -> AdminProductResponse:
     """Replace the variant list, matching existing rows by SKU.
 
     Variants dropped from the payload are deactivated rather than deleted, so
     historical order lines keep resolving.
     """
     product = await service.replace_variants(db, product_id, payload)
-    return ProductResponse.model_validate(product)
+    return AdminProductResponse.model_validate(product)
 
 
 @router.get(

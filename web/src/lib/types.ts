@@ -66,6 +66,10 @@ export interface Variant {
   /** Availability only. The exact stock figure is admin-only, by design. */
   inStock: boolean;
   position: number;
+  /** Present only on admin responses. */
+  inventoryQuantity?: number;
+  trackInventory?: boolean;
+  isActive?: boolean;
 }
 
 export interface AdminVariant extends Variant {
@@ -73,6 +77,28 @@ export interface AdminVariant extends Variant {
   trackInventory: boolean;
   isActive: boolean;
   weightGrams: number | null;
+}
+
+export interface MediaAsset {
+  id: string;
+  url: string;
+  thumbUrl: string;
+  originalName: string | null;
+  width: number;
+  height: number;
+  sizeBytes: number;
+  createdAt: string;
+}
+
+export interface ProductImage {
+  id: string;
+  mediaId: string;
+  url: string;
+  thumbUrl: string;
+  alt: string | null;
+  position: number;
+  width: number;
+  height: number;
 }
 
 export interface Category {
@@ -95,6 +121,8 @@ export interface Product {
   imageUrl: string | null;
   category: Pick<Category, "id" | "slug" | "name"> | null;
   variants: Variant[];
+  /** Gallery, in display order. The first image is used in listings. */
+  images: ProductImage[];
   createdAt: string;
 }
 

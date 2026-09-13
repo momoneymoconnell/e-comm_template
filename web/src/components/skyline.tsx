@@ -42,7 +42,11 @@ interface Building {
 }
 
 const VIEW_W = 2400;
-const VIEW_H = 340;
+// Deliberately wide relative to its height. The SVG is rendered at the full
+// width of the hero, so the viewBox aspect ratio is what decides how tall the
+// city ends up. An earlier 2400x340 box rendered ~180px tall and the towers
+// climbed into the headline; this lands back at ~140px.
+const VIEW_H = 255;
 const BASELINE = VIEW_H;
 
 /** Every light is the same magenta as the grid below, so the city and the floor
@@ -83,17 +87,19 @@ function generateBuildings(random: () => number): Building[] {
     // out long and low, rather than sloping evenly like a pyramid.
     const falloff = Math.pow(Math.max(0, closeness), 2.1);
 
-    const base = 26 + falloff * 226;
+    const base = 18 + falloff * 148;
     const jitter = (random() - 0.5) * base * 0.62;
-    const h = Math.max(16, base + jitter);
+    // Clamped, so a tall tower plus an unlucky jitter roll cannot reach up out
+    // of the horizon band and collide with the text above it.
+    const h = Math.min(196, Math.max(12, base + jitter));
 
     buildings.push({
       x,
       w,
       h,
       // Only tall towers get masts, and only some of them.
-      spire: h > 150 && random() > 0.5,
-      setback: h > 90 && random() > 0.68,
+      spire: h > 108 && random() > 0.5,
+      setback: h > 66 && random() > 0.68,
     });
 
     // Usually butt the next building up against this one; occasionally leave a
@@ -121,10 +127,10 @@ interface Light {
 function windowsFor(building: Building, random: () => number): Light[] {
   const lights: Light[] = [];
 
-  const stepX = 9;
-  const stepY = 11;
-  const inset = 6;
-  const size = 3;
+  const stepX = 8;
+  const stepY = 9;
+  const inset = 5;
+  const size = 2.6;
 
   // Too narrow or too short to hold a readable window grid.
   if (building.w < 2 * inset + size || building.h < 2 * inset + size) return lights;
@@ -153,7 +159,7 @@ function stars(random: () => number): Light[] {
   return Array.from({ length: 70 }, () => ({
     x: random() * VIEW_W,
     // Confined to the upper part so they read as sky, not as stray windows.
-    y: random() * (VIEW_H * 0.4),
+    y: random() * (VIEW_H * 0.34),
     w: 2,
     h: 2,
     opacity: 0.14 + random() * 0.3,
@@ -241,9 +247,9 @@ export function Skyline() {
             {building.setback ? (
               <rect
                 x={building.x + building.w * 0.28}
-                y={BASELINE - building.h - 14}
+                y={BASELINE - building.h - 11}
                 width={building.w * 0.44}
-                height="14"
+                height="11"
                 fill="url(#tower)"
               />
             ) : null}
@@ -252,17 +258,17 @@ export function Skyline() {
               <>
                 <rect
                   x={building.x + building.w / 2 - 0.75}
-                  y={BASELINE - building.h - 24}
+                  y={BASELINE - building.h - 18}
                   width="1.5"
-                  height="24"
+                  height="18"
                   fill="var(--color-edge-bright)"
                   opacity="0.8"
                 />
                 {/* Aircraft warning light. */}
                 <circle
                   cx={building.x + building.w / 2}
-                  cy={BASELINE - building.h - 26}
-                  r="2.2"
+                  cy={BASELINE - building.h - 20}
+                  r="2"
                   fill={WINDOW_LIGHT}
                   opacity="0.9"
                 />

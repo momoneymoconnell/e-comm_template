@@ -12,6 +12,11 @@ dependencies = [
     "asyncpg>=0.30",
     "psycopg[binary]>=3.2",
     "alembic>=1.14",
+    # Image processing for uploads. Used to validate that a file really is an
+    # image, strip EXIF (which can carry GPS coordinates), and generate
+    # web-sized derivatives so product pages are not serving 8MB camera files.
+    "pillow>=11.0",
+    "python-multipart>=0.0.20",
 ]
 
 [build-system]

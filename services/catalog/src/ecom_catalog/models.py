@@ -35,6 +35,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID
@@ -50,6 +51,16 @@ class Base(DeclarativeBase):
 
     metadata = build_metadata("catalog")
 
+
+#: Public path images are served under.
+#:
+#: A constant rather than a setting, deliberately. The URL is built in two
+#: places - the ORM properties below and the media router - and a configurable
+#: prefix means those two can disagree, which shows up as broken images only
+#: for products that happen to go through the other code path. Serving media
+#: through a CDN is a rewrite rule at the edge, not something the application
+#: needs to know about.
+MEDIA_URL_PREFIX = "/api/catalog/media"
 
 #: Product lifecycle.
 #:
@@ -135,6 +146,10 @@ class Product(Base):
         cascade="all, delete-orphan",
         order_by="ProductVariant.position",
     )
+    images: Mapped[list[ProductImage]] = relationship(
+        cascade="all, delete-orphan",
+        order_by="ProductImage.position",
+    )
 
     __table_args__ = (
         CheckConstraint(f"status IN {PRODUCT_STATUSES}", name="status_valid"),
@@ -210,3 +225,115 @@ class ProductVariant(Base):
         if not self.track_inventory:
             return True
         return self.inventory_quantity > 0
+
+
+class MediaAsset(Base):
+    """One uploaded image.
+
+    Attributes:
+        filename: Content-addressed name on disk, derived from a hash of the
+            processed bytes. Two uploads of the same picture produce the same
+            name and therefore one file.
+        original_name: What the file was called when it was uploaded. Kept for
+            the admin media library only; never used as a path.
+        width, height: Dimensions of the stored full-size image, so the
+            frontend can reserve space and avoid layout shift.
+    """
+
+    __tablename__ = "media_assets"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    filename: Mapped[str] = mapped_column(String(140), nullable=False, unique=True)
+    thumb_filename: Mapped[str] = mapped_column(String(140), nullable=False)
+    original_name: Mapped[str | None] = mapped_column(String(260))
+    content_type: Mapped[str] = mapped_column(String(60), nullable=False)
+
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=utcnow_sql()
+    )
+
+    __table_args__ = (
+        CheckConstraint("width > 0 AND height > 0", name="dimensions_positive"),
+        Index("ix_media_assets_created", "created_at"),
+    )
+
+    @property
+    def url(self) -> str:
+        """Public URL of the full-size image."""
+        return f"{MEDIA_URL_PREFIX}/{self.filename}"
+
+    @property
+    def thumb_url(self) -> str:
+        """Public URL of the thumbnail."""
+        return f"{MEDIA_URL_PREFIX}/{self.thumb_filename}"
+
+
+class ProductImage(Base):
+    """An image attached to a product, in gallery order.
+
+    Separate from `Product` because real listings need several photographs, and
+    a single `image_url` column forces you to pick one. The first image by
+    position is the one used in listings.
+
+    Attributes:
+        alt: Alternative text. Not decoration - a product page whose images have
+            no alt text is unusable with a screen reader, and in several
+            jurisdictions that is a legal exposure for a shop.
+    """
+
+    __tablename__ = "product_images"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    media_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("media_assets.id", ondelete="CASCADE"), nullable=False
+    )
+    alt: Mapped[str | None] = mapped_column(String(300))
+    position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=utcnow_sql()
+    )
+
+    #: Eagerly joined, because a gallery entry is never useful without its
+    #: file: every read needs the URL and the dimensions.
+    media: Mapped[MediaAsset] = relationship(lazy="joined")
+
+    __table_args__ = (
+        UniqueConstraint("product_id", "media_id", name="uq_product_images_product_id_media"),
+        Index("ix_product_images_product_position", "product_id", "position"),
+    )
+
+    # These four proxy the joined media row so a gallery entry serialises
+    # directly. Without them Pydantic cannot build the response from the ORM
+    # object, and a product with any image at all fails with a validation
+    # error rather than rendering.
+    @property
+    def url(self) -> str:
+        """Public URL of the full-size image."""
+        return self.media.url
+
+    @property
+    def thumb_url(self) -> str:
+        """Public URL of the thumbnail."""
+        return self.media.thumb_url
+
+    @property
+    def width(self) -> int:
+        """Full-size width in pixels."""
+        return self.media.width
+
+    @property
+    def height(self) -> int:
+        """Full-size height in pixels."""
+        return self.media.height

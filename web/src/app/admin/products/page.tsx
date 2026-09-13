@@ -9,6 +9,7 @@
  * it once the catalogue's actual shape is known.
  */
 
+import Link from "next/link";
 import { useState } from "react";
 
 import { Stat, TableWrap, Td, Th } from "@/components/admin-ui";
@@ -72,6 +73,15 @@ export default function AdminProductsPage() {
           tone={stats && stats.outOfStockVariants > 0 ? "warn" : "default"}
           loading={loading}
         />
+      </div>
+
+      <div className="flex justify-end">
+        <Link
+          href="/admin/products/new"
+          className="inscription inline-flex items-center rounded-md border border-neon bg-neon px-5 py-2.5 text-[0.7rem] text-void transition-colors hover:border-marble hover:bg-marble"
+        >
+          New product
+        </Link>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">
@@ -142,7 +152,12 @@ export default function AdminProductsPage() {
                 return (
                   <tr key={product.id} className="transition-colors hover:bg-raised/50">
                     <Td>
-                      <span className="text-sm text-marble">{product.title}</span>
+                      <Link
+                        href={`/admin/products/${product.id}`}
+                        className="text-sm text-marble transition-colors hover:text-neon"
+                      >
+                        {product.title}
+                      </Link>
                       <span className="block font-mono text-xs text-faint">
                         {product.slug}
                       </span>
@@ -202,8 +217,7 @@ export default function AdminProductsPage() {
       ) : (
         <EmptyState title="No products">
           Run <code className="font-mono text-cyan">make seed</code> to load
-          placeholder products, or create them via{" "}
-          <code className="font-mono text-cyan">POST /api/catalog/admin/products</code>.
+          placeholder products, or create one with the button above.
         </EmptyState>
       )}
     </div>

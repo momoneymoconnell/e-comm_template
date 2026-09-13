@@ -4,6 +4,7 @@
 
 import Link from "next/link";
 
+import { mediaUrl } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
@@ -15,6 +16,7 @@ export function ProductCard({ product }: { product: Product }) {
   const fromPrice = prices.length > 0 ? Math.min(...prices) : null;
   const currency = product.variants[0]?.currency ?? "usd";
   const anyInStock = product.variants.some((variant) => variant.inStock);
+  const primaryImage = product.images?.[0];
   const onSale = product.variants.some(
     (v) => v.compareAtPriceCents !== null && v.compareAtPriceCents > v.priceCents,
   );
@@ -25,14 +27,14 @@ export function ProductCard({ product }: { product: Product }) {
       className="surface group flex flex-col overflow-hidden transition-colors hover:border-neon"
     >
       <div className="relative aspect-[4/3] overflow-hidden border-b border-edge bg-night">
-        {product.imageUrl ? (
+        {primaryImage || product.imageUrl ? (
           // A plain <img>: product images come from arbitrary URLs entered in
           // the admin console, and next/image would need every one of those
           // hosts allowlisted in next.config before it would render at all.
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={product.imageUrl}
-            alt=""
+            src={mediaUrl(primaryImage?.thumbUrl ?? product.imageUrl) ?? ""}
+            alt={primaryImage?.alt ?? ""}
             loading="lazy"
             className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105"
           />
