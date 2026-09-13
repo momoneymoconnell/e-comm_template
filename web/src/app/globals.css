@@ -219,15 +219,35 @@ body {
 }
 
 /* The vaporwave horizon: a perspective grid receding to a vanishing point.
-   Pure CSS — two repeating gradients on a rotated plane. */
+   Pure CSS - two repeating gradients on a rotated plane.
+
+   The magenta verticals converge dead centre and read as streets seen from a
+   distance; toward the edges the perspective shear scatters the intersections
+   into something more random. That gradient from ordered to chaotic is the
+   whole effect, so the geometry here is left exactly as it is.
+
+   There is deliberately NO animation. An earlier version slid the horizontal
+   gradient with a keyframe, which did not read as motion at this scale - it
+   read as a band of flickering lines across the base of the hero. Static, the
+   same geometry reads as a floor. */
+/* In the document flow rather than absolutely positioned, so it sits directly
+   below the skyline: city on the horizon, floor receding toward the viewer in
+   front of it. Absolutely positioned at the bottom of the hero, as it was
+   originally, the skyline simply covered it. */
 .horizon-grid {
-  position: absolute;
-  inset: auto 0 0 0;
-  height: 42vh;
+  position: relative;
+  /* A fixed height, not a viewport unit. With the skyline above it, `vh` made
+     the combined horizon tall enough to push the grid below the fold on a
+     laptop - the dots were rendering, just off screen. */
+  height: 190px;
   overflow: hidden;
   pointer-events: none;
-  mask-image: linear-gradient(to top, black 0%, transparent 92%);
-  -webkit-mask-image: linear-gradient(to top, black 0%, transparent 92%);
+  /* Opaque nearest the viewer and still largely opaque at the horizon line,
+     so the skyline has lights to stand on. Fading from the very top, as an
+     earlier version did, left a dead band between the buildings and the first
+     visible dots. */
+  mask-image: linear-gradient(to top, black 0%, black 55%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to top, black 0%, black 55%, transparent 100%);
 }
 
 .horizon-grid::before {
@@ -237,30 +257,16 @@ body {
   background-image:
     repeating-linear-gradient(
       90deg,
-      color-mix(in srgb, var(--color-neon) 34%, transparent) 0 1px,
+      color-mix(in srgb, var(--color-neon) 46%, transparent) 0 1px,
       transparent 1px 62px
     ),
     repeating-linear-gradient(
       0deg,
-      color-mix(in srgb, var(--color-cyan) 26%, transparent) 0 1px,
+      color-mix(in srgb, var(--color-cyan) 34%, transparent) 0 1px,
       transparent 1px 46px
     );
   transform: perspective(340px) rotateX(72deg);
   transform-origin: 50% 100%;
-  animation: grid-drift 14s linear infinite;
-}
-
-@keyframes grid-drift {
-  from {
-    background-position:
-      0 0,
-      0 0;
-  }
-  to {
-    background-position:
-      0 0,
-      0 46px;
-  }
 }
 
 /* The sun: a gradient disc with horizontal slots cut out of its lower half. */

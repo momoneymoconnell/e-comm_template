@@ -11,6 +11,7 @@
 import { headers } from "next/headers";
 
 import { ProductCard } from "@/components/product-card";
+import { Skyline } from "@/components/skyline";
 import { ButtonLink, Container, Meander, SectionTitle } from "@/components/ui";
 import { serverFetch } from "@/lib/api";
 import type { Category, Page, Product } from "@/lib/types";
@@ -118,16 +119,11 @@ function Hero() {
         aria-hidden
         className="absolute inset-x-0 top-24 -z-10 h-56 bg-[radial-gradient(ellipse_at_center,rgba(10,7,24,0.85)_0%,transparent_72%)]"
       />
-      {/* The receding grid. */}
-      <div aria-hidden className="horizon-grid -z-10" />
-
-      <Container className="relative flex flex-col items-center py-28 text-center sm:py-36">
+      <Container className="relative flex flex-col items-center pt-24 pb-14 text-center sm:pt-32 sm:pb-16">
         <p className="inscription mb-5 text-[0.66rem] text-cyan">Est. MMXXVI</p>
 
         <h1 className="inscription chrome-text max-w-3xl text-4xl leading-[1.15] drop-shadow-[0_2px_18px_rgba(10,7,24,0.9)] sm:text-6xl">
-          A temple for
-          <br />
-          things worth having
+          Excellent choice
         </h1>
 
         <Meander className="mt-7 w-40" />
@@ -146,14 +142,17 @@ function Hero() {
         </div>
       </Container>
 
-      {/* A row of columns along the base of the hero. Decorative. */}
-      <div aria-hidden className="relative flex items-end justify-center gap-2 px-4 pb-0 sm:gap-4">
-        {Array.from({ length: 9 }).map((_, index) => (
-          <span
-            key={index}
-            className="fluted h-10 w-6 rounded-t-sm border-x border-t border-edge-bright/60 bg-gradient-to-b from-panel/70 to-transparent sm:h-16 sm:w-10"
-          />
-        ))}
+      {/* The horizon.
+          The grid is laid down first and the city is overlaid onto it, offset
+          from the bottom so the towers stand *in* the lights rather than
+          floating above them. The perspective transform concentrates the grid
+          into a band at the very bottom of its box, so simply stacking the two
+          left an obvious dead gap between the buildings and the first dots. */}
+      <div className="relative">
+        <div aria-hidden className="horizon-grid" />
+        <div className="absolute inset-x-0 bottom-[30px]">
+          <Skyline />
+        </div>
       </div>
     </section>
   );
