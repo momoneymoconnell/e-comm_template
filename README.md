@@ -757,8 +757,8 @@ testing what you ship.
 An ordered procedure. Do them in this order — several steps depend on the one
 before, and a couple take days of waiting that you want started early.
 
-Budget roughly **£40–£100 in setup costs** and **£15–£30/month** to run, plus
-whatever your jurisdiction charges to register a business.
+Budget roughly **$50–$150 in setup costs** and **$20–$40/month** to run, plus
+whatever your state charges to register a business (typically $50–$500).
 
 ---
 
@@ -774,9 +774,13 @@ your shipping setup. Nothing below can be finished without this answer.
 Do this first, because Stripe will ask for it and company registration can take
 days.
 
-1. Form the entity (LLC, Ltd, sole trader — your call, worth an accountant's
-   hour).
-2. Get the tax ID (EIN in the US, UTR/company number in the UK).
+1. Form the entity. An **LLC** is the usual choice for a single-owner online
+   shop — it separates your personal assets from the business, costs $50–$500
+   depending on the state, and can elect S-corp taxation later if it grows.
+   A sole proprietorship is free and gives you no liability protection at all.
+   Worth an hour with an accountant.
+2. Get an **EIN** from the IRS. It is free, takes about ten minutes online, and
+   Stripe will ask for it. Do not pay a service for this.
 3. Open a **business bank account**. Stripe pays out to it, and mixing personal
    and business money is the single most common bookkeeping mistake.
 
@@ -832,10 +836,15 @@ for your catalogue.
 
 **Hetzner** is the cheapest thing that will comfortably run this.
 
-1. [hetzner.com/cloud](https://www.hetzner.com/cloud) → **CX22** (2 vCPU, 4GB,
-   ~€4/month). Ubuntu 24.04. Add your SSH key during creation — password login
-   is asking for trouble.
-2. Buy a domain (Namecheap, Cloudflare, Porkbun — ~£10/year).
+1. [hetzner.com/cloud](https://www.hetzner.com/cloud) → **CPX21** (3 vCPU,
+   4 GB, about $8/month). Pick a **US location** — Ashburn VA or Hillsboro OR —
+   so your customers are not crossing the Atlantic for every page load, and so
+   you are billed in dollars rather than euros. Ubuntu 24.04. Add your SSH key
+   during creation; password login is asking for trouble.
+
+   4 GB is the right size for ten containers. The 2 GB tier will run it and
+   will start swapping under any real traffic.
+2. Buy a domain (Namecheap, Cloudflare, Porkbun — about $12/year).
 3. Point an **A record** at the server's IP. Do this now; DNS takes up to an
    hour to propagate and you'll want it ready.
 
@@ -993,15 +1002,21 @@ entirely on what you sell and where.
 - **`web/src/app/privacy/page.tsx`** describes what the software actually does
   and is accurate, but it has not been reviewed against GDPR, UK GDPR or CCPA
   for *your* business.
-- **Returns policy.** In the EU and UK, distance selling gives consumers 14 days
-  to cancel for any reason. That is law, not policy — you can be more generous,
-  not less.
+- **Returns policy.** There is no federal right to return in the US, so this
+  one is genuinely your policy. Two things are not optional, though: the FTC's
+  Mail Order Rule requires you to ship within the time you advertised (30 days
+  if you did not say), or offer the customer a refund; and several states,
+  California among them, require you to post your return policy conspicuously.
+  If you ship to the EU or UK, their distance-selling rules give consumers 14
+  days to cancel for any reason, and that *is* law rather than policy.
 
-Budget a few hundred for a solicitor or use a reputable generator and have it
-checked. This is not the place to save money.
+Budget $200–$1,500 for a lawyer, or use a reputable generator and have an
+attorney review the output. This is not the place to save money.
 
-Also required in most jurisdictions: business name, registered address and
-company number in the footer or on a contact page.
+Also expected: your business name, a physical address and a working contact
+method on the site. CAN-SPAM requires a physical postal address in commercial
+email, and Stripe requires visible contact details as a condition of
+processing.
 
 ---
 
@@ -1010,11 +1025,18 @@ company number in the footer or on a contact page.
 - **PCI DSS SAQ-A.** You still have to complete it annually even though card
   data never touches this code. It's the short version precisely *because*
   Stripe Elements keeps you out of scope. Stripe's dashboard walks you through it.
-- **Tax registration.** Stripe Tax calculates; it does not register or file for
-  you. Register where you have nexus and file on schedule.
-- **Cookie consent.** The analytics here is pseudonymous, respects Do Not Track,
-  and stores no cross-site identifiers, which is the reason you likely don't
-  need a banner. Confirm that for your jurisdiction before assuming it.
+- **Sales tax registration.** Stripe Tax calculates and monitors thresholds; it
+  does not register or file for you. Since *South Dakota v. Wayfair*, you owe
+  sales tax in any state where you cross an economic nexus threshold — commonly
+  $100,000 in sales or 200 transactions in a year, though it varies by state.
+  Register with each state's revenue department and file on their schedule.
+- **Privacy law.** The US has no single federal privacy law; it is state by
+  state. California (CCPA/CPRA) is the one most likely to reach you, and it
+  applies once you pass its thresholds — broadly $25M revenue, or the personal
+  data of 100,000 Californians. The analytics here is pseudonymous, honours Do
+  Not Track and stores no cross-site identifiers, which is why you probably do
+  not need a cookie banner. If you sell into the EU or UK, GDPR applies from
+  your first customer there, regardless of your size.
 - **Accessibility.** The UI uses semantic markup, visible focus rings, labelled
   inputs and text alternatives for charts. It has not been audited. ADA lawsuits
   against online shops are common in the US; an audit is cheaper than a claim.
@@ -1102,15 +1124,15 @@ Then change the bootstrap admin password and clear
 | # | Step | Time | Cost |
 |---|------|------|------|
 | 0 | Decide what you sell | — | — |
-| 1 | Register the business, open a bank account | 1–5 days | varies |
+| 1 | Register the business, open a bank account | 1–5 days | $50–$500 |
 | 2 | Stripe + Stripe Tax + wire it in | half a day | 2.9% + 30¢ + 0.5% |
-| 3 | Hetzner box + domain + DNS | 1 hour | ~£5/mo + £10/yr |
+| 3 | Hetzner box + domain + DNS | 1 hour | ~$8/mo + $12/yr |
 | 4 | Production `.env` | 30 min | — |
 | 5 | Caddy and HTTPS | 30 min | free |
 | 6 | Email provider + SPF/DKIM/DMARC | 1 hour | free tier |
-| 7 | Terms, privacy, returns | days | a few hundred |
+| 7 | Terms, privacy, returns | days | $200–$1,500 |
 | 8 | PCI SAQ-A, tax registration | 1–2 days | — |
-| 9 | Backups, and test a restore | 1 hour | ~£3/mo |
+| 9 | Backups, and test a restore | 1 hour | ~$4/mo |
 | 10 | Radar rules, chargeback process | 1 hour | free |
 | 11 | Load products, test a real sale, open up | 1 day | — |
 
