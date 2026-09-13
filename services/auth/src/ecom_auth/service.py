@@ -34,7 +34,14 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ecom_auth.config import AuthSettings
-from ecom_auth.models import AuditEvent, LoginAttempt, PasswordResetToken, RefreshToken, User
+from ecom_auth.models import (
+    AuditEvent,
+    EmailVerificationToken,
+    LoginAttempt,
+    PasswordResetToken,
+    RefreshToken,
+    User,
+)
 
 log = get_logger(__name__)
 
@@ -359,6 +366,17 @@ async def authenticate(
         # Same message as a bad password: confirming that a *disabled* account
         # exists still confirms the address is registered.
         raise UnauthorizedError(generic_failure)
+
+    if settings.require_verified_email and user.email_verified_at is None:
+        _record(False, "unverified_email")
+        await _persist_security_record(session)
+        # A specific message here, unlike the failures above. The password was
+        # correct, so this person has already proved the account is theirs -
+        # telling them what to do next reveals nothing they do not know, and a
+        # generic "incorrect email or password" would be actively misleading.
+        raise UnauthorizedError(
+            "Confirm your email address before signing in. Check your inbox for the link."
+        )
 
     if password_needs_rehash(user.password_hash):
         user.password_hash = await asyncio.to_thread(hash_password, password)
@@ -830,5 +848,107 @@ async def admin_update_user(
             metadata=changes,
         )
         log.info("admin_updated_user", actor=str(actor), target=str(user.id), changes=changes)
+
+    return user
+
+
+# -----------------------------------------------------------------------------
+# Email verification
+# -----------------------------------------------------------------------------
+
+
+async def create_email_verification(
+    session: AsyncSession, settings: AuthSettings, *, user: User
+) -> str:
+    """Issue a verification token for a user's current address.
+
+    Any outstanding tokens are invalidated first. Requesting a second link
+    otherwise leaves the first one live, widening the window in which an old
+    message sitting in a mailbox is still usable.
+
+    Args:
+        session: Active session.
+        settings: Supplies the token lifetime.
+        user: Whose address to verify.
+
+    Returns:
+        The plaintext token. The only copy that will ever exist - the row holds
+        a hash - so it must go straight into the email and nowhere else.
+    """
+    await session.execute(
+        update(EmailVerificationToken)
+        .where(
+            EmailVerificationToken.user_id == user.id,
+            EmailVerificationToken.used_at.is_(None),
+        )
+        .values(used_at=datetime.now(UTC))
+    )
+
+    raw = generate_token(32)
+    session.add(
+        EmailVerificationToken(
+            user_id=user.id,
+            token_hash=hash_token(raw),
+            email=user.email,
+            expires_at=datetime.now(UTC)
+            + timedelta(seconds=settings.email_verification_ttl_seconds),
+        )
+    )
+    await session.flush()
+    return raw
+
+
+async def consume_email_verification(session: AsyncSession, *, raw_token: str) -> User:
+    """Redeem a verification link and mark the address confirmed.
+
+    Args:
+        session: Active session.
+        raw_token: The token from the emailed link.
+
+    Returns:
+        The user whose address was verified.
+
+    Raises:
+        UnauthorizedError: If the token is unknown, already used, expired, or
+            was issued for an address the account no longer uses. One message
+            covers all four, so a probe learns nothing.
+    """
+    result = await session.execute(
+        select(EmailVerificationToken).where(
+            EmailVerificationToken.token_hash == hash_token(raw_token)
+        )
+    )
+    token = result.scalar_one_or_none()
+
+    now = datetime.now(UTC)
+    invalid = "This link is invalid or has expired. Request a new one."
+
+    if token is None or token.used_at is not None or token.expires_at <= now:
+        raise UnauthorizedError(invalid)
+
+    user = await session.get(User, token.user_id)
+    if user is None:
+        raise UnauthorizedError(invalid)
+
+    # The address must still be the one the link was issued for. Otherwise a
+    # link sent to an old address would verify whatever the account was changed
+    # to afterwards.
+    if user.email != token.email:
+        raise UnauthorizedError(invalid)
+
+    token.used_at = now
+
+    # Idempotent: clicking the link twice is normal (mail clients prefetch
+    # links), and the second click should not look like a failure.
+    if user.email_verified_at is None:
+        user.email_verified_at = now
+        record_audit(
+            session,
+            action="user.email_verified",
+            actor_user_id=user.id,
+            target_type="user",
+            target_id=str(user.id),
+        )
+        log.info("email_verified", user_id=str(user.id))
 
     return user

@@ -176,6 +176,12 @@ class ResetPasswordRequest(ApiModel):
         return _reject_weak_password(value)
 
 
+class VerifyEmailRequest(ApiModel):
+    """Redeem an email verification link."""
+
+    token: str = Field(min_length=20, max_length=200)
+
+
 class UpdateProfileRequest(ApiModel):
     """Update your own profile.
 

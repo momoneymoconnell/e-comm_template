@@ -41,6 +41,7 @@ from ecom_auth.schemas import (
     SessionSummary,
     UpdateProfileRequest,
     UserResponse,
+    VerifyEmailRequest,
 )
 
 log = get_logger(__name__)
@@ -55,6 +56,54 @@ def _client_context(request: Request) -> tuple[str | None, str | None]:
     """Extract ``(ip, user_agent)`` for audit and session records."""
     ip = client_ip(request)
     return (None if ip == "unknown" else ip), request.headers.get("User-Agent")
+
+
+async def _send_verification_email(db: AsyncSession, settings: AuthSettings, user: User) -> None:
+    """Issue a verification token and dispatch the email.
+
+    Failures are logged and swallowed. A mail problem must not fail a
+    registration that otherwise succeeded - the account exists, the customer is
+    signed in, and they can request another link from their account page.
+
+    Args:
+        db: Active session.
+        settings: Supplies the URL and token lifetime.
+        user: Who to verify.
+    """
+    raw = await service.create_email_verification(db, settings, user=user)
+    verify_url = f"{settings.public_web_url}/verify-email?token={raw}"
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(
+                f"{settings.notifications_url}/notifications/send",
+                json={
+                    "template": "email_verification",
+                    "to": user.email,
+                    "context": {
+                        "fullName": user.full_name or "there",
+                        "verifyUrl": verify_url,
+                        "expiresDays": settings.email_verification_ttl_seconds // 86_400,
+                    },
+                },
+                headers={"Authorization": f"Bearer {_service_token(settings)}"},
+            )
+            # Checked, not assumed. A silently-dropped 401 here is how the
+            # password reset email went unnoticed for as long as it did.
+            response.raise_for_status()
+    except httpx.HTTPError as exc:
+        log.error("verification_email_failed", user_id=str(user.id), error=str(exc))
+
+
+def _service_token(settings: AuthSettings) -> str:
+    """Mint a short-lived token for calling the notifications service."""
+    from ecom_shared.security import create_service_token
+
+    return create_service_token(
+        service_name="auth",
+        secret_key=settings.jwt_secret_key.get_secret_value(),
+        ttl_seconds=60,
+    )
 
 
 def _read_refresh_cookie(request: Request) -> str | None:
@@ -151,6 +200,7 @@ async def register(
         ip_address=ip,
         user_agent=user_agent,
     )
+    await _send_verification_email(db, settings, user)
     return await _establish_session(db, settings, response, user, request)
 
 
@@ -389,7 +439,7 @@ async def forgot_password(payload: ForgotPasswordRequest, db: Db, settings: Sett
     # back door.
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(
+            response = await client.post(
                 f"{settings.notifications_url}/notifications/send",
                 json={
                     "template": "password_reset",
@@ -400,11 +450,44 @@ async def forgot_password(payload: ForgotPasswordRequest, db: Db, settings: Sett
                         "expiresMinutes": settings.password_reset_ttl_seconds // 60,
                     },
                 },
+                # The notifications send endpoint requires a service token.
+                # Without this header it answers 401, and because the result
+                # was never checked, every password reset email was silently
+                # dropped while the endpoint reported success.
+                headers={"Authorization": f"Bearer {_service_token(settings)}"},
             )
+            response.raise_for_status()
     except httpx.HTTPError as exc:
         log.error("password_reset_email_failed", user_id=str(user.id), error=str(exc))
 
     return generic
+
+
+@router.post("/email/verify", response_model=Message, summary="Confirm an email address")
+async def verify_email(payload: VerifyEmailRequest, db: Db) -> Message:
+    """Redeem an emailed verification link.
+
+    Unauthenticated on purpose: the link is often opened on a different device
+    from the one that signed up, and requiring a session there is a reliable
+    way to make people give up.
+    """
+    await service.consume_email_verification(db, raw_token=payload.token)
+    return Message(message="Email confirmed. Thank you.")
+
+
+@router.post("/email/resend", response_model=Message, summary="Send a new confirmation link")
+async def resend_verification(identity: CurrentUser, db: Db, settings: Settings) -> Message:
+    """Send the signed-in customer another verification link.
+
+    Always reports success, including when the address is already verified.
+    Saying "that is already confirmed" tells anyone holding a stolen session
+    something about the account for no benefit.
+    """
+    user = await service.get_user_by_id(db, identity.user_id)
+    if user.email_verified_at is None:
+        await _send_verification_email(db, settings, user)
+
+    return Message(message="If confirmation is needed, a new link is on its way.")
 
 
 @router.post("/password/reset", response_model=Message, summary="Redeem a reset link")
