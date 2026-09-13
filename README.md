@@ -115,6 +115,30 @@ declined. Any future expiry and any CVC.
 
 ---
 
+## What it does now
+
+Beyond accounts, cart, checkout and payments, the shop has:
+
+- **Product management** in the admin console. Create and edit products,
+  variants, prices and stock; upload, reorder and caption images.
+- **Image hosting** built in. Files go to a volume, get content-addressed names
+  and cache headers, and are stripped of EXIF and resized on upload. No S3
+  account needed to start.
+- **Five-star reviews**, gated on a verified purchase so ratings mean something.
+- **Discount codes**, percent or fixed, with minimums, usage caps and windows.
+- **Shipment tracking** — mark an order shipped with a carrier and number and
+  the customer gets an email with a working tracking link.
+- **SEO** — sitemap, structured data, and social preview cards, all behind one
+  switch so nothing gets indexed before launch.
+
+Still deliberately absent, with reasoning in
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): gift cards, wishlists, loyalty
+points, subscriptions, multi-currency, abandoned-cart email, a CMS, and
+per-jurisdiction tax. That last one is the only real blocker to selling at
+scale, and the fix is Stripe Tax rather than code.
+
+---
+
 ## Why it's built this way
 
 Most of these choices come down to the same three things: it's free, it's fast,

@@ -193,4 +193,8 @@ Honest about what this is not:
 | Tax is a flat basis-point rate | Before selling across jurisdictions. Use Stripe Tax or a dedicated service. |
 | No search engine | When `ILIKE` stops being fast enough or you need relevance ranking. |
 | Sessions are stateless JWTs with a 15-minute window | If you need instant global revocation rather than 15-minute-bounded. |
-| Admin product editing is read-only in the UI | The API supports full CRUD; the form is left to build once the catalogue's real shape is known. |
+| Tax is a flat basis-point rate | Before selling across jurisdictions. Stripe Tax is roughly 0.5% per transaction and calculates per-jurisdiction rates; that is the fix, not more code. |
+| No gift cards, wishlists, loyalty points or subscriptions | When a real business actually asks for one. Each is a schema, an admin screen and a set of edge cases, and shipping them speculatively is how a template becomes a burden. |
+| No abandoned-cart email | When you have enough traffic for it to pay. It needs a scheduler and a suppression list, which is real infrastructure for a marketing gain you cannot measure yet. |
+| No multi-currency | When you sell somewhere that needs it. Doing it properly means per-currency pricing, not runtime conversion, which touches every price in the system. |
+| Search is `ILIKE` | When the catalogue outgrows it or you need relevance ranking. Postgres full-text is the next step and needs no new service. |
