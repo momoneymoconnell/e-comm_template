@@ -11,6 +11,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 
 import { AddToCart } from "@/components/add-to-cart";
+import { ProductReviews, RatingBadge } from "@/components/reviews";
 import { Container, Meander } from "@/components/ui";
 import { mediaUrl, serverFetch } from "@/lib/api";
 import type { Product } from "@/lib/types";
@@ -120,6 +121,16 @@ export default async function ProductPage({
             <p className="mt-3 text-base text-muted">{product.subtitle}</p>
           ) : null}
 
+          {product.ratingCount > 0 ? (
+            <a href="#reviews" className="mt-3 inline-block">
+              <RatingBadge
+                average={product.ratingAverage}
+                count={product.ratingCount}
+                size={15}
+              />
+            </a>
+          ) : null}
+
           <Meander className="my-7 max-w-[8rem]" />
 
           {product.description ? (
@@ -133,6 +144,8 @@ export default async function ProductPage({
           </div>
         </div>
       </div>
+
+      <ProductReviews slug={product.slug} />
     </Container>
   );
 }

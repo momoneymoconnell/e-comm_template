@@ -133,12 +133,34 @@ class Product(Base):
     image_url: Mapped[str | None] = mapped_column(String(500))
     position: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
 
+    #: Running totals for the star rating.
+    #:
+    #: Denormalised on purpose. Every product listing shows an average, and
+    #: computing it with a correlated subquery turns a 24-product grid into 24
+    #: extra aggregate queries. Stored as a count and a *sum* rather than an
+    #: average so the arithmetic stays in integers - averaging averages is how
+    #: a rating slowly drifts away from the reviews it came from.
+    rating_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    rating_sum: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=utcnow_sql()
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=utcnow_sql(), onupdate=func.now()
     )
+
+    @property
+    def rating_average(self) -> float | None:
+        """Mean star rating, or ``None`` when nothing has been reviewed.
+
+        None rather than 0.0: a brand-new product has no rating, which is a
+        different statement from being rated zero, and a 0.0 renders as an
+        empty row of stars.
+        """
+        if self.rating_count == 0:
+            return None
+        return round(self.rating_sum / self.rating_count, 1)
 
     category: Mapped[Category | None] = relationship(back_populates="products")
     variants: Mapped[list[ProductVariant]] = relationship(
@@ -154,6 +176,14 @@ class Product(Base):
     __table_args__ = (
         CheckConstraint(f"status IN {PRODUCT_STATUSES}", name="status_valid"),
         CheckConstraint("slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'", name="slug_format"),
+        CheckConstraint("rating_count >= 0", name="rating_count_non_negative"),
+        # The sum must be consistent with the count: every review contributes
+        # between 1 and 5 stars, so the sum can never be below the count nor
+        # above five times it. Catches a bad increment at the storage layer.
+        CheckConstraint(
+            "rating_sum >= rating_count AND rating_sum <= rating_count * 5",
+            name="rating_sum_consistent",
+        ),
         # The storefront's main query is "active products in this category,
         # in merchandising order"; this index answers it directly.
         Index("ix_products_status_category", "status", "category_id", "position"),
@@ -337,3 +367,65 @@ class ProductImage(Base):
     def height(self) -> int:
         """Full-size height in pixels."""
         return self.media.height
+
+
+#: Review moderation states.
+#:
+#: Reviews are published immediately because a shop with no visible reviews
+#: gets no reviews. `hidden` is the moderation lever for anything abusive; the
+#: row is kept rather than deleted so the rating maths stays auditable.
+REVIEW_STATUSES = ("published", "hidden")
+
+
+class ProductReview(Base):
+    """A customer's star rating and written review of a product.
+
+    Attributes:
+        user_id: The reviewer. Reviews require an account, which combined with
+            the verified-purchase check is what keeps this from becoming a spam
+            surface.
+        author_name: Display name captured at the time of writing. Snapshotted
+            rather than joined from the auth service, for the same reason order
+            lines are snapshotted: reviews outlive profile edits, and a review
+            page should not need a cross-service call per row.
+        rating: One to five stars, constrained in the database.
+        is_verified_purchase: Whether the reviewer had actually bought the
+            product when they wrote this.
+    """
+
+    __tablename__ = "product_reviews"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    product_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("products.id", ondelete="CASCADE"), nullable=False
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    author_name: Mapped[str] = mapped_column(String(120), nullable=False)
+
+    rating: Mapped[int] = mapped_column(Integer, nullable=False)
+    title: Mapped[str | None] = mapped_column(String(160))
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+
+    is_verified_purchase: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    status: Mapped[str] = mapped_column(String(20), nullable=False, server_default="published")
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=utcnow_sql()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=utcnow_sql(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("rating BETWEEN 1 AND 5", name="rating_in_range"),
+        CheckConstraint(f"status IN {REVIEW_STATUSES}", name="status_valid"),
+        # One review per person per product. Without this, a single unhappy
+        # customer can post fifty one-star reviews and move the average at will.
+        UniqueConstraint("product_id", "user_id", name="uq_product_reviews_product_id_user"),
+        Index("ix_product_reviews_product_created", "product_id", "created_at"),
+        Index("ix_product_reviews_status", "status"),
+    )

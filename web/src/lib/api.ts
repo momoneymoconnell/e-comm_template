@@ -51,7 +51,15 @@ export function apiBaseUrl(): string {
 export function mediaUrl(path: string | null | undefined): string | null {
   if (!path) return null;
   if (/^https?:\/\//i.test(path)) return path;
-  const base = apiBaseUrl();
+
+  // Always the PUBLIC base, never `apiBaseUrl()`.
+  //
+  // `apiBaseUrl()` returns the internal container address during server
+  // rendering, which is correct for fetching but wrong here: this value ends
+  // up in an `<img src>` that a browser has to load, and no browser can
+  // resolve `http://gateway:8000`. Server-rendered product images came back
+  // broken until this stopped following the fetch base.
+  const base = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
   return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 

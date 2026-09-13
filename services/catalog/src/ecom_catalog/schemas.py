@@ -74,6 +74,56 @@ class ProductImageResponse(ApiModel):
     height: int
 
 
+class ReviewResponse(ApiModel):
+    """A published review."""
+
+    id: UUID
+    author_name: str
+    rating: int
+    title: str | None
+    body: str
+    is_verified_purchase: bool
+    created_at: datetime
+
+
+class AdminReviewResponse(ReviewResponse):
+    """A review as an admin sees it, including hidden ones."""
+
+    product_id: UUID
+    user_id: UUID
+    status: str
+
+
+class RatingSummary(ApiModel):
+    """Aggregate rating for a product.
+
+    Attributes:
+        average: Mean rating to one decimal place, or ``None`` with no reviews.
+            Explicitly nullable rather than defaulting to 0, because "no
+            reviews yet" and "rated zero" are different things and a zero would
+            render as an empty star row on a brand-new product.
+        breakdown: Count at each star level, so the UI can draw a histogram.
+    """
+
+    average: float | None
+    count: int
+    breakdown: dict[int, int] = Field(default_factory=dict)
+
+
+class WriteReviewRequest(ApiModel):
+    """Submit a review."""
+
+    rating: int = Field(ge=1, le=5)
+    title: str | None = Field(default=None, max_length=160)
+    body: str = Field(min_length=10, max_length=4000)
+
+
+class ModerateReviewRequest(ApiModel):
+    """Admin: publish or hide a review."""
+
+    status: str = Field(pattern="^(published|hidden)$")
+
+
 class CategorySummary(ApiModel):
     """A category, flattened for embedding in a product response."""
 
@@ -95,6 +145,8 @@ class ProductResponse(ApiModel):
     category: CategorySummary | None
     variants: list[VariantResponse]
     images: list[ProductImageResponse] = Field(default_factory=list)
+    rating_average: float | None = None
+    rating_count: int = 0
     created_at: datetime
 
     @property
@@ -138,6 +190,8 @@ class AdminProductResponse(ApiModel):
     category: CategorySummary | None
     variants: list[AdminVariantResponse]
     images: list[ProductImageResponse] = Field(default_factory=list)
+    rating_average: float | None = None
+    rating_count: int = 0
     created_at: datetime
 
 

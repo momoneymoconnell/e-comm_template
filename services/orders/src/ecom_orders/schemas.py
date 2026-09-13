@@ -221,3 +221,22 @@ class PaymentFailedRequest(ApiModel):
 
     payment_intent_id: str = Field(min_length=1, max_length=120)
     reason: str | None = Field(default=None, max_length=500)
+
+
+class PurchaseCheckRequest(ApiModel):
+    """Internal: has this customer actually bought any of these variants?
+
+    Asked by the catalog service before accepting a product review. Reviews
+    restricted to verified purchases are the single most effective spam filter
+    a small shop has - it costs an attacker a real order to leave one.
+    """
+
+    user_id: UUID
+    variant_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class PurchaseCheckResponse(ApiModel):
+    """Whether a paid order exists containing one of the variants."""
+
+    purchased: bool
+    first_purchased_at: datetime | None = None
