@@ -752,18 +752,370 @@ testing what you ship.
 
 ---
 
-## Before going live
+## Going live
 
-Don't put this on the internet without reading
-[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and the checklist at the end of
-[docs/SECURITY.md](docs/SECURITY.md). The short version:
+An ordered procedure. Do them in this order — several steps depend on the one
+before, and a couple take days of waiting that you want started early.
 
-- `ENVIRONMENT=production` and `COOKIE_SECURE=true`
-- HTTPS, with the site and the API under one domain
-- Stop publishing ports 8001–8006; only the gateway should be reachable
-- Fresh secrets, and change the bootstrap admin password
-- Delete `web/public/robots.txt` and the `robots` metadata in `layout.tsx`
-- Set up backups, then test restoring one
+Budget roughly **£40–£100 in setup costs** and **£15–£30/month** to run, plus
+whatever your jurisdiction charges to register a business.
+
+---
+
+### Step 0 — Decide what you sell (blocks everything else)
+
+Physical or digital changes your payment processor, your tax obligations and
+your shipping setup. Nothing below can be finished without this answer.
+
+---
+
+### Step 1 — Register the business
+
+Do this first, because Stripe will ask for it and company registration can take
+days.
+
+1. Form the entity (LLC, Ltd, sole trader — your call, worth an accountant's
+   hour).
+2. Get the tax ID (EIN in the US, UTR/company number in the UK).
+3. Open a **business bank account**. Stripe pays out to it, and mixing personal
+   and business money is the single most common bookkeeping mistake.
+
+---
+
+### Step 2 — Stripe, and Stripe Tax
+
+**2a. Create the account** at [stripe.com](https://stripe.com). You'll need the
+business details from step 1. Approval is usually minutes, occasionally days if
+your category needs review.
+
+**2b. Turn on Stripe Tax** — Dashboard → Tax. This is the thing that makes
+selling legal at scale. Costs about 0.5% per transaction and calculates the
+correct rate per jurisdiction. Register where Stripe tells you it's monitoring
+thresholds.
+
+**2c. Wire it into the code.** The tax rate here is currently a flat
+`tax_rate_basis_points`, defaulting to 0. It needs replacing with a Stripe Tax
+calculation. Roughly:
+
+- In `services/payments/src/ecom_payments/stripe_gateway.py`, add
+  `automatic_tax={"enabled": True}` to the payment intent, and pass the
+  customer's address as `shipping`.
+- In `services/orders/src/ecom_orders/service.py`, take the tax figure from
+  Stripe's response instead of `compute_totals`.
+
+Ask me to do this — it's about half a day and I know where the seams are.
+
+**2d. Get your keys** from Dashboard → Developers → API keys. Use **test** keys
+(`sk_test_…`) until everything else works, then swap to live.
+
+**2e. Set up the webhook** — Dashboard → Developers → Webhooks → Add endpoint:
+
+```
+https://yourdomain.com/api/payments/webhook
+```
+
+Subscribe to `payment_intent.succeeded`, `payment_intent.payment_failed`,
+`payment_intent.canceled`, `charge.refunded`. Copy the signing secret
+(`whsec_…`).
+
+> Until that secret is set, **orders never reach paid**. Unsigned webhooks are
+> rejected on purpose — a public endpoint that marks orders paid without
+> checking the signature is a way to get free merchandise.
+
+**2f. Turn on Radar** (Dashboard → Radar). Free tier blocks the obvious card
+testing. Set a rule to review transactions over whatever "unusually large" means
+for your catalogue.
+
+---
+
+### Step 3 — Buy hosting and a domain
+
+**Hetzner** is the cheapest thing that will comfortably run this.
+
+1. [hetzner.com/cloud](https://www.hetzner.com/cloud) → **CX22** (2 vCPU, 4GB,
+   ~€4/month). Ubuntu 24.04. Add your SSH key during creation — password login
+   is asking for trouble.
+2. Buy a domain (Namecheap, Cloudflare, Porkbun — ~£10/year).
+3. Point an **A record** at the server's IP. Do this now; DNS takes up to an
+   hour to propagate and you'll want it ready.
+
+On the server:
+
+```bash
+ssh root@YOUR_SERVER_IP
+
+# Docker
+curl -fsSL https://get.docker.com | sh
+
+# Lock down SSH: no root login, no passwords
+sed -i 's/^#*PermitRootLogin.*/PermitRootLogin prohibit-password/' /etc/ssh/sshd_config
+sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
+systemctl restart ssh
+
+# Firewall: SSH and web only. Nothing else should be reachable.
+ufw allow OpenSSH && ufw allow 80 && ufw allow 443 && ufw --force enable
+
+# Unattended security updates
+apt install -y unattended-upgrades && dpkg-reconfigure -plow unattended-upgrades
+```
+
+Then get the code on the box:
+
+```bash
+git clone https://github.com/momoneymoconnell/e-comm_template.git /srv/shop
+cd /srv/shop
+make setup        # creates .env and generates every secret
+```
+
+---
+
+### Step 4 — Configure for production
+
+Edit `/srv/shop/.env`. These are **not** optional:
+
+```bash
+ENVIRONMENT=production          # disables /docs and error detail in responses
+COOKIE_SECURE=true              # required for the __Host- cookie prefix
+COOKIE_DOMAIN=yourdomain.com
+
+PUBLIC_WEB_URL=https://yourdomain.com
+PUBLIC_API_URL=https://yourdomain.com
+CORS_ALLOW_ORIGINS=https://yourdomain.com
+NEXT_PUBLIC_API_URL=https://yourdomain.com
+NEXT_PUBLIC_SITE_URL=https://yourdomain.com
+NEXT_PUBLIC_SITE_NAME=Your Shop Name
+
+STRIPE_SECRET_KEY=sk_live_...
+STRIPE_PUBLISHABLE_KEY=pk_live_...
+NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+
+ADMIN_EMAILS=you@yourdomain.com
+BOOTSTRAP_ADMIN_EMAIL=you@yourdomain.com
+BOOTSTRAP_ADMIN_PASSWORD=<a long random one>
+
+NEXT_PUBLIC_ALLOW_INDEXING=false   # flip to true at launch, not before
+```
+
+> **Same domain for the site and the API.** Session cookies are `SameSite=Lax`,
+> which means they are not sent cross-site. Put the frontend on one domain and
+> the API on another and login will return 200 while the browser stays signed
+> out. The Caddy config below handles this by serving both from one hostname.
+
+Stop publishing internal ports — only the gateway and the site should be
+reachable:
+
+```yaml
+# /srv/shop/docker-compose.prod.yml
+services:
+  auth:          { ports: !reset [] }
+  catalog:       { ports: !reset [] }
+  orders:        { ports: !reset [] }
+  payments:      { ports: !reset [] }
+  analytics:     { ports: !reset [] }
+  notifications: { ports: !reset [] }
+  postgres:      { ports: !reset [] }
+  mailpit:       { ports: !reset [] }
+  gateway:       { ports: ["127.0.0.1:8080:8000"] }
+  web:           { ports: ["127.0.0.1:3000:3000"] }
+```
+
+---
+
+### Step 5 — HTTPS
+
+Caddy gets you a certificate automatically and renews it.
+
+```bash
+apt install -y caddy
+```
+
+```
+# /etc/caddy/Caddyfile
+yourdomain.com {
+    # The API first: more specific routes must match before the catch-all.
+    handle /api/* {
+        reverse_proxy 127.0.0.1:8080
+    }
+    handle {
+        reverse_proxy 127.0.0.1:3000
+    }
+
+    # Overwrite, never append. If a client can add to X-Forwarded-For it can
+    # spoof its IP and defeat rate limiting.
+    request_header X-Forwarded-For {remote_host}
+
+    encode gzip
+}
+```
+
+```bash
+systemctl reload caddy
+cd /srv/shop && docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Visit `https://yourdomain.com`. You should get a padlock and the storefront.
+
+---
+
+### Step 6 — Real email
+
+Mailpit catches mail locally and delivers none of it. In production you need a
+real sender or every receipt lands in spam.
+
+1. Sign up for **Resend**, **Postmark** or **AWS SES** (all have free tiers
+   around 3,000/month).
+2. Add their SMTP credentials to `.env`:
+
+```bash
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=587
+SMTP_USERNAME=resend
+SMTP_PASSWORD=re_...
+SMTP_USE_TLS=true
+EMAIL_FROM=orders@yourdomain.com
+EMAIL_FROM_NAME=Your Shop Name
+```
+
+3. **Add SPF, DKIM and DMARC records** to your DNS — your provider gives you the
+   exact values. Skip this and Gmail silently bins your receipts. Verify at
+   [mail-tester.com](https://www.mail-tester.com).
+
+---
+
+### Step 7 — Legal pages (needs a human, not a generator)
+
+Three pages ship deliberately incomplete because the right content depends
+entirely on what you sell and where.
+
+- **`web/src/app/terms/page.tsx`** is empty. It needs terms of sale: what you're
+  selling, delivery times, returns and refunds, liability, governing law.
+- **`web/src/app/privacy/page.tsx`** describes what the software actually does
+  and is accurate, but it has not been reviewed against GDPR, UK GDPR or CCPA
+  for *your* business.
+- **Returns policy.** In the EU and UK, distance selling gives consumers 14 days
+  to cancel for any reason. That is law, not policy — you can be more generous,
+  not less.
+
+Budget a few hundred for a solicitor or use a reputable generator and have it
+checked. This is not the place to save money.
+
+Also required in most jurisdictions: business name, registered address and
+company number in the footer or on a contact page.
+
+---
+
+### Step 8 — Compliance and due diligence
+
+- **PCI DSS SAQ-A.** You still have to complete it annually even though card
+  data never touches this code. It's the short version precisely *because*
+  Stripe Elements keeps you out of scope. Stripe's dashboard walks you through it.
+- **Tax registration.** Stripe Tax calculates; it does not register or file for
+  you. Register where you have nexus and file on schedule.
+- **Cookie consent.** The analytics here is pseudonymous, respects Do Not Track,
+  and stores no cross-site identifiers, which is the reason you likely don't
+  need a banner. Confirm that for your jurisdiction before assuming it.
+- **Accessibility.** The UI uses semantic markup, visible focus rings, labelled
+  inputs and text alternatives for charts. It has not been audited. ADA lawsuits
+  against online shops are common in the US; an audit is cheaper than a claim.
+- **Age or licence restrictions** if you sell anything regulated.
+
+---
+
+### Step 9 — Backups, before your first order
+
+The database is the only thing that cannot be rebuilt.
+
+```bash
+# /etc/cron.daily/shop-backup
+#!/bin/bash
+cd /srv/shop
+docker compose exec -T postgres pg_dump -U ecom -Fc ecom \
+  > /var/backups/shop-$(date +%F).dump
+find /var/backups -name 'shop-*.dump' -mtime +30 -delete
+```
+
+```bash
+chmod +x /etc/cron.daily/shop-backup
+```
+
+**Copy them off the server** — Hetzner Storage Box, S3, anywhere else. A backup
+on the machine that dies is not a backup.
+
+**Then restore one.** An untested backup is a guess, and you find out at the
+worst possible moment.
+
+---
+
+### Step 10 — Scam and abuse hardening
+
+Most of this is already built. The rest is configuration.
+
+Already in place: Argon2id passwords, refresh-token rotation with theft
+detection, brute-force lockout, CSRF on every state change, per-IP rate
+limiting, server-side pricing so a tampered cart cannot set its own prices,
+webhook signature verification, and reviews gated on a verified purchase.
+
+What you still need to do:
+
+- **Turn on Stripe Radar rules.** Block mismatched CVC and postcode. Flag
+  unusually large first orders.
+- **Have a chargeback process.** Keep delivery confirmation. Respond to every
+  dispute — unanswered ones are lost automatically.
+- **Watch these log lines.** They are the ones that matter:
+  `payment_amount_mismatch`, `stripe_webhook_signature_invalid`,
+  `refresh_token_reuse_detected`, `stock_release_failed`,
+  `notification_permanently_failed`.
+- **Consider requiring verified email** (`REQUIRE_VERIFIED_EMAIL=true`) if you
+  start seeing junk signups. Off by default because it locks out anyone who
+  mistypes their address.
+
+---
+
+### Step 11 — Launch
+
+```bash
+# 1. Real products
+#    Admin console -> Catalogue -> New product
+
+# 2. Delete the placeholders
+#    Admin -> Catalogue -> archive each "Placeholder Item"
+
+# 3. Test a real purchase with a real card, then refund yourself
+#    This is the only way to know the whole chain works.
+
+# 4. Open the doors
+#    .env: NEXT_PUBLIC_ALLOW_INDEXING=true
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# 5. Submit your sitemap
+#    Google Search Console -> https://yourdomain.com/sitemap.xml
+```
+
+Then change the bootstrap admin password and clear
+`BOOTSTRAP_ADMIN_PASSWORD` from `.env`.
+
+---
+
+### The short version
+
+| # | Step | Time | Cost |
+|---|------|------|------|
+| 0 | Decide what you sell | — | — |
+| 1 | Register the business, open a bank account | 1–5 days | varies |
+| 2 | Stripe + Stripe Tax + wire it in | half a day | 2.9% + 30¢ + 0.5% |
+| 3 | Hetzner box + domain + DNS | 1 hour | ~£5/mo + £10/yr |
+| 4 | Production `.env` | 30 min | — |
+| 5 | Caddy and HTTPS | 30 min | free |
+| 6 | Email provider + SPF/DKIM/DMARC | 1 hour | free tier |
+| 7 | Terms, privacy, returns | days | a few hundred |
+| 8 | PCI SAQ-A, tax registration | 1–2 days | — |
+| 9 | Backups, and test a restore | 1 hour | ~£3/mo |
+| 10 | Radar rules, chargeback process | 1 hour | free |
+| 11 | Load products, test a real sale, open up | 1 day | — |
+
+Deeper background on any of this: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) and
+[docs/SECURITY.md](docs/SECURITY.md).
 
 ## Licence
 

@@ -193,6 +193,28 @@ Track it here: {{ trackingUrl }}
 {% endif %}
 """,
     ),
+    "email_verification": EmailTemplate(
+        subject="Confirm your email address",
+        html="""
+<p>Hello {{ fullName }},</p>
+<p>Confirm this address so we can send you receipts and order updates.</p>
+<p style="margin:26px 0;">
+  <a href="{{ verifyUrl }}" style="display:inline-block;padding:12px 26px;background:#f2c6ff;color:#17102e;text-decoration:none;border-radius:8px;font-weight:bold;letter-spacing:0.05em;">Confirm email</a>
+</p>
+<p style="color:#9d92c9;font-size:13px;">This link is valid for {{ expiresDays }} days.
+If you did not create an account, you can ignore this message.</p>
+""",
+        text="""\
+Hello {{ fullName }},
+
+Confirm this address so we can send you receipts and order updates:
+
+{{ verifyUrl }}
+
+This link is valid for {{ expiresDays }} days. If you did not create an account,
+ignore this message.
+""",
+    ),
     "welcome": EmailTemplate(
         subject="Welcome to {{ siteName }}",
         html="""

@@ -225,6 +225,47 @@ class PasswordResetToken(Base):
     __table_args__ = (Index("ix_password_reset_tokens_user_id", "user_id"),)
 
 
+class EmailVerificationToken(Base):
+    """A single-use link proving someone controls the address they signed up with.
+
+    Separate from `PasswordResetToken` even though the shape is almost
+    identical. Merging them into one table with a `purpose` column invites the
+    bug where a verification link is accepted as a password reset - the two
+    have very different consequences, and keeping them apart makes that
+    mistake impossible rather than merely unlikely.
+
+    Attributes:
+        token_hash: SHA-256 of the token in the emailed link. The token itself
+            exists only in the customer's inbox.
+        used_at: Set on redemption. A verification link that works twice is one
+            an attacker can reuse after reading the mailbox once.
+    """
+
+    __tablename__ = "email_verification_tokens"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    #: The address this token was issued for.
+    #:
+    #: Recorded so that changing an email after requesting a link invalidates
+    #: it. Without this, a link issued for the old address would verify the new
+    #: one, which defeats the point of verifying at all.
+    email: Mapped[str] = mapped_column(CITEXT, nullable=False)
+
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=utcnow_sql()
+    )
+
+    __table_args__ = (Index("ix_email_verification_tokens_user", "user_id", "used_at"),)
+
+
 class LoginAttempt(Base):
     """One sign-in attempt, successful or not.
 

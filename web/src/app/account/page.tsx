@@ -6,7 +6,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { useSession } from "@/components/session-provider";
 import {
@@ -69,6 +69,8 @@ export default function AccountPage() {
     <Container className="py-16">
       <SectionTitle kicker="Your account">{user.fullName || user.email}</SectionTitle>
 
+      {user.emailVerifiedAt === null ? <VerifyEmailNotice /> : null}
+
       <div className="grid gap-8 lg:grid-cols-[1fr_18rem]">
         <div>
           <h2 className="inscription mb-4 text-[0.72rem] text-cyan/80">Order history</h2>
@@ -127,6 +129,13 @@ export default function AccountPage() {
             <div>
               <dt className="text-xs text-faint">Email</dt>
               <dd className="break-all text-ink">{user.email}</dd>
+              <dd className="mt-0.5 text-xs">
+                {user.emailVerifiedAt ? (
+                  <span className="text-ok">Confirmed</span>
+                ) : (
+                  <span className="text-warn">Not confirmed</span>
+                )}
+              </dd>
             </div>
             <div>
               <dt className="text-xs text-faint">Member since</dt>
@@ -160,5 +169,44 @@ export default function AccountPage() {
         </Panel>
       </div>
     </Container>
+  );
+}
+
+/**
+ * Prompt to confirm an unverified address.
+ *
+ * A notice rather than a block. Nothing is gated on verification by default -
+ * see `require_verified_email` in the auth service for why locking people out
+ * of accounts they have already paid with is a bad default.
+ */
+function VerifyEmailNotice() {
+  const [sent, setSent] = useState(false);
+  const [pending, setPending] = useState(false);
+
+  return (
+    <div className="mb-8 flex flex-wrap items-center gap-4 rounded-md border border-warn/40 bg-warn/10 px-4 py-3">
+      <p className="flex-1 text-sm text-warn">
+        {sent
+          ? "Sent. Check your inbox for the confirmation link."
+          : "Your email address is not confirmed yet. Confirming it makes sure receipts reach you."}
+      </p>
+      {!sent ? (
+        <Button
+          tone="ghost"
+          disabled={pending}
+          onClick={async () => {
+            setPending(true);
+            try {
+              await apiFetch<unknown>("/auth/email/resend", { method: "POST" });
+              setSent(true);
+            } finally {
+              setPending(false);
+            }
+          }}
+        >
+          {pending ? "Sending…" : "Resend link"}
+        </Button>
+      ) : null}
+    </div>
   );
 }

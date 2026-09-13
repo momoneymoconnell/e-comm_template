@@ -45,6 +45,24 @@ class AuthSettings(ServiceSettings):
     #: would look.
     password_reset_ttl_seconds: int = 3600
 
+    #: How long an email verification link stays valid.
+    #:
+    #: Days rather than an hour. Unlike a password reset, nobody is waiting at
+    #: the keyboard for this one - people sign up, get distracted, and come
+    #: back to their inbox the next morning. A link that has expired by then
+    #: just creates a support ticket.
+    email_verification_ttl_seconds: int = 604_800  # 7 days
+
+    #: Block sign-in until the address is verified.
+    #:
+    #: Off by default, and that is a deliberate trade rather than an oversight.
+    #: Turning it on means a customer who mistypes their address, or whose
+    #: provider silently bins the message, is locked out of an account they
+    #: already paid with - and you only find out when they complain. With it
+    #: off, verification still happens, it is still recorded, and the admin
+    #: console still shows who has and has not confirmed.
+    require_verified_email: bool = False
+
     # --- Outbound -----------------------------------------------------------
     notifications_url: str = "http://notifications:8000"
 
