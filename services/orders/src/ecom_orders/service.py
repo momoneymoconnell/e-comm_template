@@ -33,6 +33,7 @@ from ecom_orders.models import (
     ALLOWED_TRANSITIONS,
     Cart,
     CartItem,
+    DiscountCode,
     Order,
     OrderEvent,
     OrderItem,
@@ -45,6 +46,42 @@ log = get_logger(__name__)
 #: Excludes I, O, 0, 1 — the glyphs people reliably misread when copying a
 #: reference off a screen or reading it down a phone line.
 ORDER_NUMBER_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+
+#: Tracking URL templates per carrier.
+#:
+#: A small map rather than an integration. Every carrier publishes a public
+#: tracking page keyed on the number, and building that URL is all a customer
+#: actually needs - real carrier APIs cost money, need credentials, and buy
+#: nothing until you are shipping enough to care about live status.
+CARRIER_TRACKING_URLS: dict[str, str] = {
+    "ups": "https://www.ups.com/track?tracknum={number}",
+    "usps": "https://tools.usps.com/go/TrackConfirmAction?tLabels={number}",
+    "fedex": "https://www.fedex.com/fedextrack/?trknbr={number}",
+    "dhl": "https://www.dhl.com/en/express/tracking.html?AWB={number}",
+    "royalmail": "https://www.royalmail.com/track-your-item#/tracking-results/{number}",
+}
+
+
+def tracking_url_for(carrier: str | None, number: str | None) -> str | None:
+    """Build a public tracking URL, if the carrier is one we know.
+
+    Args:
+        carrier: Carrier key, any case.
+        number: The tracking number.
+
+    Returns:
+        A URL, or ``None`` when either is missing or the carrier is unknown.
+        Returning None rather than guessing means the email simply omits the
+        button instead of linking somewhere broken.
+    """
+    if not carrier or not number:
+        return None
+    template = CARRIER_TRACKING_URLS.get(carrier.strip().lower())
+    if template is None:
+        return None
+    from urllib.parse import quote
+
+    return template.format(number=quote(number.strip()))
 
 
 def generate_order_number() -> str:
@@ -205,7 +242,9 @@ async def set_cart_item_quantity(
 # -----------------------------------------------------------------------------
 
 
-def compute_totals(subtotal_cents: int, settings: OrderSettings) -> tuple[int, int, int]:
+def compute_totals(
+    subtotal_cents: int, settings: OrderSettings, discount_cents: int = 0
+) -> tuple[int, int, int]:
     """Derive tax, shipping and grand total from a subtotal.
 
     All arithmetic is on integers. `//` after multiplying by the rate keeps the
@@ -216,11 +255,23 @@ def compute_totals(subtotal_cents: int, settings: OrderSettings) -> tuple[int, i
     Args:
         subtotal_cents: Sum of the line totals.
         settings: Supplies the tax rate and shipping rules.
+        discount_cents: Any discount already applied.
 
     Returns:
         ``(tax_cents, shipping_cents, total_cents)``.
+
+    Note:
+        Tax is charged on the **discounted** subtotal, which is how sales tax
+        and VAT actually work: a discount reduces the price of the goods and
+        tax applies to what was paid. Taxing the pre-discount amount
+        overcharges the customer and leaves you remitting tax you never
+        collected.
+
+        Shipping is assessed on the *pre*-discount subtotal, so a code cannot
+        be used to reach a free-shipping threshold the order does not meet.
     """
-    tax_cents = (subtotal_cents * settings.tax_rate_basis_points) // 10_000
+    taxable = max(0, subtotal_cents - discount_cents)
+    tax_cents = (taxable * settings.tax_rate_basis_points) // 10_000
 
     if subtotal_cents == 0:
         shipping_cents = 0
@@ -232,10 +283,57 @@ def compute_totals(subtotal_cents: int, settings: OrderSettings) -> tuple[int, i
     else:
         shipping_cents = settings.flat_shipping_cents
 
-    return tax_cents, shipping_cents, subtotal_cents + tax_cents + shipping_cents
+    return (
+        tax_cents,
+        shipping_cents,
+        subtotal_cents - discount_cents + tax_cents + shipping_cents,
+    )
 
 
-async def price_cart(cart: Cart, catalog: CatalogClient, settings: OrderSettings) -> dict[str, Any]:
+async def resolve_discount(
+    session: AsyncSession, code: str | None, subtotal_cents: int
+) -> tuple[DiscountCode | None, int, str | None]:
+    """Look up a discount code and work out what it is worth.
+
+    Args:
+        session: Active session.
+        code: The code as typed, or ``None``.
+        subtotal_cents: The subtotal it would apply to.
+
+    Returns:
+        ``(code row, discount in minor units, rejection reason)``. A rejection
+        reason means the code exists but cannot be used right now; the caller
+        decides whether that is an error or a message on the cart.
+    """
+    if not code or not code.strip():
+        return None, 0, None
+
+    result = await session.execute(select(DiscountCode).where(DiscountCode.code == code.strip()))
+    discount = result.scalar_one_or_none()
+    if discount is None:
+        # Deliberately the same message as an expired or exhausted code.
+        # Distinguishing them lets someone enumerate which codes exist.
+        return None, 0, "That code is not valid."
+
+    usable, reason = discount.is_redeemable_at(datetime.now(UTC))
+    if not usable:
+        return None, 0, reason
+
+    if subtotal_cents < discount.min_subtotal_cents:
+        minimum = discount.min_subtotal_cents / 100
+        return None, 0, f"That code needs a subtotal of at least {minimum:.2f}."
+
+    return discount, discount.amount_for(subtotal_cents), None
+
+
+async def price_cart(
+    cart: Cart,
+    catalog: CatalogClient,
+    settings: OrderSettings,
+    *,
+    discount_cents: int = 0,
+    discount_code: str | None = None,
+) -> dict[str, Any]:
     """Price a cart against the live catalogue.
 
     Called on every cart read and again at checkout. Prices are never cached on
@@ -250,6 +348,8 @@ async def price_cart(cart: Cart, catalog: CatalogClient, settings: OrderSettings
         cart: The cart to price.
         catalog: Client for the authoritative price lookup.
         settings: Supplies tax and shipping rules.
+        discount_cents: A discount already resolved by the caller.
+        discount_code: The code it came from, echoed back for display.
 
     Returns:
         A dict matching `CartResponse`.
@@ -259,6 +359,8 @@ async def price_cart(cart: Cart, catalog: CatalogClient, settings: OrderSettings
             "id": cart.id,
             "items": [],
             "subtotal_cents": 0,
+            "discount_cents": 0,
+            "discount_code": None,
             "tax_cents": 0,
             "shipping_cents": 0,
             "total_cents": 0,
@@ -320,11 +422,18 @@ async def price_cart(cart: Cart, catalog: CatalogClient, settings: OrderSettings
             }
         )
 
-    tax, shipping, total = compute_totals(subtotal, settings)
+    # Re-clamped against the freshly computed subtotal: the caller worked the
+    # discount out against whatever the cart looked like a moment ago, and a
+    # line going out of stock in between must not leave a discount larger than
+    # the goods it applies to.
+    applied_discount = max(0, min(discount_cents, subtotal))
+    tax, shipping, total = compute_totals(subtotal, settings, applied_discount)
     return {
         "id": cart.id,
         "items": items,
         "subtotal_cents": subtotal,
+        "discount_cents": applied_discount,
+        "discount_code": discount_code if applied_discount > 0 else None,
         "tax_cents": tax,
         "shipping_cents": shipping,
         "total_cents": total,
@@ -350,6 +459,7 @@ async def checkout(
     settings: OrderSettings,
     catalog: CatalogClient,
     payments: PaymentsClient,
+    discount_code: str | None = None,
 ) -> tuple[Order, dict[str, Any]]:
     """Convert a cart into an order and start payment.
 
@@ -385,6 +495,7 @@ async def checkout(
         settings: Service settings.
         catalog: Catalogue client.
         payments: Payments client.
+        discount_code: An optional promotional code to apply.
 
     Returns:
         ``(order, payment intent dict)``.
@@ -400,7 +511,25 @@ async def checkout(
         raise ConflictError("Your cart is empty.")
 
     # --- 1. Authoritative pricing -------------------------------------------
+    # Priced once to get a subtotal, then the code is resolved against it and
+    # the cart repriced. The discount cannot be computed before the subtotal
+    # exists, and the subtotal must come from the catalogue rather than the
+    # client.
     priced = await price_cart(cart, catalog, settings)
+    discount, discount_amount, discount_error = await resolve_discount(
+        session, discount_code, priced["subtotal_cents"]
+    )
+    if discount_code and discount_error:
+        raise ConflictError(discount_error, details={"field": "discountCode"})
+
+    if discount is not None:
+        priced = await price_cart(
+            cart,
+            catalog,
+            settings,
+            discount_cents=discount_amount,
+            discount_code=discount.code,
+        )
     if priced["has_unavailable_items"]:
         raise ConflictError(
             "Some items in your cart are no longer available. Review your cart and try again."
@@ -422,6 +551,8 @@ async def checkout(
             email=email.strip().lower(),
             status="pending_payment",
             subtotal_cents=priced["subtotal_cents"],
+            discount_cents=priced["discount_cents"],
+            discount_code=priced["discount_code"],
             tax_cents=priced["tax_cents"],
             shipping_cents=priced["shipping_cents"],
             total_cents=priced["total_cents"],
@@ -455,6 +586,12 @@ async def checkout(
         # function.
         cart.status = "converted"
 
+        # Redemption is counted here, inside the checkout transaction, so a
+        # code limited to 100 uses cannot be redeemed 150 times by simultaneous
+        # checkouts. The CHECK constraint on the column is the backstop.
+        if discount is not None:
+            discount.used_count += 1
+
         session.add(order)
         await session.flush()
     except Exception:
@@ -472,10 +609,18 @@ async def checkout(
             email=order.email,
         )
     except Exception:
-        # Compensate: release the stock and mark the order cancelled. Committed
-        # explicitly, because the exception we re-raise would otherwise roll
-        # back the cancellation and leave a pending order nobody will ever pay.
+        # Compensate: release the stock, give back the redemption, and mark the
+        # order cancelled. Committed explicitly, because the exception we
+        # re-raise would otherwise roll back the cancellation and leave a
+        # pending order nobody will ever pay.
         await catalog.release_inventory(lines)
+
+        # The redemption was counted when the order was created. An order that
+        # never gets paid for must not consume one, or a code limited to 100
+        # uses is quietly exhausted by 100 failed card attempts.
+        if discount is not None:
+            discount.used_count = max(0, discount.used_count - 1)
+
         order.status = "cancelled"
         order.cancelled_at = datetime.now(UTC)
         order.events.append(
@@ -509,6 +654,8 @@ async def transition_order(
     new_status: str,
     note: str | None = None,
     actor_user_id: UUID | None = None,
+    carrier: str | None = None,
+    tracking_number: str | None = None,
 ) -> Order:
     """Move an order to a new status, enforcing the state machine.
 
@@ -523,6 +670,8 @@ async def transition_order(
         new_status: Target status.
         note: Free text recorded on the history entry.
         actor_user_id: Who did it; ``None`` for a system action.
+        carrier: Shipping carrier, captured when marking an order fulfilled.
+        tracking_number: Tracking number, captured at the same time.
 
     Returns:
         The updated order.
@@ -549,6 +698,14 @@ async def transition_order(
         order.paid_at = now
     elif new_status == "cancelled":
         order.cancelled_at = now
+    elif new_status == "fulfilled":
+        order.shipped_at = now
+        # Only overwritten when supplied, so correcting a status later does not
+        # wipe shipping details that were captured the first time.
+        if carrier:
+            order.carrier = carrier.strip()
+        if tracking_number:
+            order.tracking_number = tracking_number.strip()
 
     order.events.append(OrderEvent(status=new_status, note=note, actor_user_id=actor_user_id))
     await session.flush()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ecom_shared.app import create_service_app
 
+from ecom_orders.admin_router import discounts_router
 from ecom_orders.admin_router import router as admin_router
 from ecom_orders.config import OrderSettings
 from ecom_orders.internal_router import router as internal_router
@@ -20,7 +21,7 @@ app = create_service_app(
     # effectively unreachable.
     #
     # More specific routers first; the catch-all last.
-    routers=[admin_router, internal_router, public_router],
+    routers=[discounts_router, admin_router, internal_router, public_router],
     title="Orders Service",
     description=(
         "Carts, checkout and the order lifecycle.\n\n"

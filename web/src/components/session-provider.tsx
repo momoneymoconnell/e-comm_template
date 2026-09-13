@@ -37,6 +37,9 @@ interface SessionContextValue {
   signUp: (email: string, password: string, fullName?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshCart: () => Promise<void>;
+  /** The discount code the shopper has entered, held client-side. */
+  discountCode: string;
+  applyDiscount: (code: string) => Promise<void>;
   addToCart: (variantId: string, quantity?: number) => Promise<void>;
   setCartQuantity: (itemId: string, quantity: number) => Promise<void>;
 }
@@ -50,13 +53,28 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [cart, setCart] = useState<Cart | null>(null);
   const [loading, setLoading] = useState(true);
+  // Held here rather than on the cart record. A code is a client-side
+  // intention until checkout re-validates it, so there is no stale state to
+  // clean up if the shopper changes their mind or the code expires.
+  const [discountCode, setDiscountCode] = useState("");
 
   const refreshCart = useCallback(async () => {
     try {
-      setCart(await apiFetch<Cart>("/orders/cart"));
+      const query = discountCode ? `?code=${encodeURIComponent(discountCode)}` : "";
+      setCart(await apiFetch<Cart>(`/orders/cart${query}`));
     } catch {
       // A cart that fails to load must not blank the page. The badge simply
       // shows nothing until the next successful fetch.
+    }
+  }, [discountCode]);
+
+  const applyDiscount = useCallback(async (code: string) => {
+    setDiscountCode(code.trim());
+    try {
+      const query = code.trim() ? `?code=${encodeURIComponent(code.trim())}` : "";
+      setCart(await apiFetch<Cart>(`/orders/cart${query}`));
+    } catch {
+      /* The cart keeps its previous state; the error surfaces on the next read. */
     }
   }, []);
 
@@ -154,8 +172,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       refreshCart,
       addToCart,
       setCartQuantity,
+      discountCode,
+      applyDiscount,
     }),
-    [user, cart, loading, signIn, signUp, signOut, refreshCart, addToCart, setCartQuantity],
+    [
+      user,
+      cart,
+      loading,
+      signIn,
+      signUp,
+      signOut,
+      refreshCart,
+      addToCart,
+      setCartQuantity,
+      discountCode,
+      applyDiscount,
+    ],
   );
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;

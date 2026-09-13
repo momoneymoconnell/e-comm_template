@@ -55,6 +55,8 @@ export default function AdminOrderPage({
   const { id } = use(params);
   const [pending, setPending] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [carrier, setCarrier] = useState("");
+  const [trackingNumber, setTrackingNumber] = useState("");
 
   const {
     data: order,
@@ -71,7 +73,15 @@ export default function AdminOrderPage({
     try {
       await apiFetch<Order>(`/orders/admin/${id}/status`, {
         method: "PATCH",
-        json: { status, note: `Marked ${status.replace(/_/g, " ")} from the admin console.` },
+        json: {
+          status,
+          note: `Marked ${status.replace(/_/g, " ")} from the admin console.`,
+          // Only meaningful when shipping; the API ignores them otherwise and
+          // never overwrites existing details with blanks.
+          carrier: status === "fulfilled" ? carrier.trim() || null : null,
+          trackingNumber:
+            status === "fulfilled" ? trackingNumber.trim() || null : null,
+        },
       });
       // Refetch: a transition can have side effects beyond the status field
       // (cancelling releases stock, and a new history entry is written).
@@ -129,6 +139,50 @@ export default function AdminOrderPage({
               </Button>
             ))}
           </div>
+          {order.status === "paid" ? (
+            <div className="mt-4 grid gap-3 border-t border-edge pt-4 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="carrier"
+                  className="mb-1 block text-[0.6rem] text-faint"
+                >
+                  Carrier (optional)
+                </label>
+                <select
+                  id="carrier"
+                  value={carrier}
+                  onChange={(event) => setCarrier(event.target.value)}
+                  className="w-full rounded-md border border-edge bg-night px-3 py-1.5 text-sm text-ink focus:border-cyan focus:outline-none"
+                >
+                  <option value="">No carrier</option>
+                  <option value="ups">UPS</option>
+                  <option value="usps">USPS</option>
+                  <option value="fedex">FedEx</option>
+                  <option value="dhl">DHL</option>
+                  <option value="royalmail">Royal Mail</option>
+                </select>
+              </div>
+              <div>
+                <label
+                  htmlFor="tracking"
+                  className="mb-1 block text-[0.6rem] text-faint"
+                >
+                  Tracking number (optional)
+                </label>
+                <input
+                  id="tracking"
+                  value={trackingNumber}
+                  onChange={(event) => setTrackingNumber(event.target.value)}
+                  className="w-full rounded-md border border-edge bg-night px-3 py-1.5 text-sm text-ink focus:border-cyan focus:outline-none"
+                />
+              </div>
+              <p className="text-xs text-faint sm:col-span-2">
+                Marking this shipped emails the customer. With a carrier and a
+                number the email includes a working tracking link.
+              </p>
+            </div>
+          ) : null}
+
           {order.status === "pending_payment" ? (
             <p className="mt-3 text-xs text-faint">
               Cancelling an unpaid order returns its reserved stock to the catalogue.
@@ -164,6 +218,12 @@ export default function AdminOrderPage({
           <Meander className="my-4" />
           <dl className="space-y-1.5 text-sm">
             <Row label="Subtotal" value={formatMoney(order.subtotalCents, order.currency)} />
+            {order.discountCents > 0 ? (
+              <Row
+                label={`Discount${order.discountCode ? ` (${order.discountCode})` : ""}`}
+                value={`−${formatMoney(order.discountCents, order.currency)}`}
+              />
+            ) : null}
             <Row label="Tax" value={formatMoney(order.taxCents, order.currency)} />
             <Row label="Shipping" value={formatMoney(order.shippingCents, order.currency)} />
             <div className="flex justify-between border-t border-edge pt-2">
@@ -190,6 +250,26 @@ export default function AdminOrderPage({
                 ))}
             </address>
           </Panel>
+
+          {order.trackingNumber ? (
+            <Panel className="p-6">
+              <p className="inscription text-[0.64rem] text-cyan/70">Shipment</p>
+              <Meander className="my-4" />
+              <p className="text-sm text-ink">
+                {order.carrier?.toUpperCase()} · {order.trackingNumber}
+              </p>
+              {order.trackingUrl ? (
+                <a
+                  href={order.trackingUrl}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="mt-2 inline-block text-xs text-cyan underline-offset-4 hover:underline"
+                >
+                  Track this parcel
+                </a>
+              ) : null}
+            </Panel>
+          ) : null}
 
           <Panel className="p-6">
             <p className="inscription text-[0.64rem] text-cyan/70">History</p>

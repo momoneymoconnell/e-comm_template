@@ -7,7 +7,7 @@ from typing import Any
 from uuid import UUID
 
 from ecom_shared.schemas import ApiModel
-from pydantic import EmailStr, Field, field_validator
+from pydantic import EmailStr, Field, field_validator, model_validator
 
 
 class Address(ApiModel):
@@ -81,6 +81,11 @@ class CartResponse(ApiModel):
     id: UUID
     items: list[CartItemResponse]
     subtotal_cents: int
+    discount_cents: int = 0
+    discount_code: str | None = None
+    #: Why a submitted code was not applied. Shown next to the input, so a
+    #: shopper learns the code expired rather than silently seeing no change.
+    discount_error: str | None = None
     tax_cents: int
     shipping_cents: int
     total_cents: int
@@ -108,6 +113,7 @@ class CheckoutRequest(ApiModel):
     billing_address: Address | None = Field(
         default=None, description="Defaults to the shipping address when omitted."
     )
+    discount_code: str | None = Field(default=None, max_length=40)
 
 
 class CheckoutResponse(ApiModel):
@@ -164,10 +170,16 @@ class OrderResponse(ApiModel):
     status: str
     email: EmailStr
     subtotal_cents: int
+    discount_cents: int = 0
+    discount_code: str | None = None
     tax_cents: int
     shipping_cents: int
     total_cents: int
     currency: str
+    carrier: str | None = None
+    tracking_number: str | None = None
+    tracking_url: str | None = None
+    shipped_at: datetime | None = None
     shipping_address: dict[str, Any]
     billing_address: dict[str, Any]
     items: list[OrderItemResponse]
@@ -191,13 +203,71 @@ class OrderSummary(ApiModel):
 
 
 class UpdateOrderStatusRequest(ApiModel):
-    """Admin: move an order to a new status."""
+    """Admin: move an order to a new status.
+
+    Marking an order fulfilled is the point at which shipping details are
+    captured, because that is when they exist. Supplying them sends the
+    customer a shipped email with a working tracking link.
+    """
 
     status: str = Field(
         pattern="^(paid|fulfilled|delivered|cancelled|refunded)$",
         description="Target status. The transition must be legal from the current one.",
     )
     note: str | None = Field(default=None, max_length=1000)
+    carrier: str | None = Field(default=None, max_length=60)
+    tracking_number: str | None = Field(default=None, max_length=120)
+
+
+class DiscountCodeResponse(ApiModel):
+    """A promotional code, for the admin console."""
+
+    id: UUID
+    code: str
+    description: str | None
+    kind: str
+    value: int
+    min_subtotal_cents: int
+    max_uses: int | None
+    used_count: int
+    starts_at: datetime | None
+    ends_at: datetime | None
+    is_active: bool
+    created_at: datetime
+
+
+class DiscountCodeWrite(ApiModel):
+    """Create a promotional code."""
+
+    code: str = Field(min_length=3, max_length=40, pattern=r"^[A-Za-z0-9_-]+$")
+    description: str | None = Field(default=None, max_length=200)
+    kind: str = Field(pattern="^(percent|fixed)$")
+    value: int = Field(gt=0, description="Basis points for percent, minor units for fixed.")
+    min_subtotal_cents: int = Field(default=0, ge=0)
+    max_uses: int | None = Field(default=None, gt=0)
+    starts_at: datetime | None = None
+    ends_at: datetime | None = None
+    is_active: bool = True
+
+    @model_validator(mode="after")
+    def _check_value_and_dates(self) -> DiscountCodeWrite:
+        """Reject values the database would refuse, with a message that explains.
+
+        Both rules are also CHECK constraints, which is where the real
+        guarantee lives. Validating here as well turns what would otherwise be
+        an IntegrityError - reported by the route handler as "that code already
+        exists", because that is the only integrity error it expects - into a
+        422 that says what is actually wrong.
+
+        Raises:
+            ValueError: For a percentage above 100%, or an end date that falls
+                before the start date.
+        """
+        if self.kind == "percent" and self.value > 10_000:
+            raise ValueError("A percentage discount cannot exceed 100% (10000 basis points).")
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValueError("The end date must be after the start date.")
+        return self
 
 
 # -----------------------------------------------------------------------------

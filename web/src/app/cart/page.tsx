@@ -24,9 +24,11 @@ import { mediaUrl } from "@/lib/api";
 import { formatMoney } from "@/lib/format";
 
 export default function CartPage() {
-  const { cart, setCartQuantity, loading } = useSession();
+  const { cart, setCartQuantity, loading, discountCode, applyDiscount } = useSession();
   const [busyItem, setBusyItem] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [codeInput, setCodeInput] = useState(discountCode);
+  const [applying, setApplying] = useState(false);
 
   async function change(itemId: string, quantity: number) {
     setBusyItem(itemId);
@@ -165,6 +167,16 @@ export default function CartPage() {
 
           <dl className="space-y-2.5 text-sm">
             <Row label="Subtotal" value={formatMoney(cart.subtotalCents, cart.currency)} />
+            {cart.discountCents > 0 ? (
+              <div className="flex justify-between">
+                <dt className="text-ok">
+                  Discount{cart.discountCode ? ` (${cart.discountCode})` : ""}
+                </dt>
+                <dd className="text-ok">
+                  −{formatMoney(cart.discountCents, cart.currency)}
+                </dd>
+              </div>
+            ) : null}
             {cart.taxCents > 0 ? (
               <Row label="Tax" value={formatMoney(cart.taxCents, cart.currency)} />
             ) : null}
@@ -177,6 +189,43 @@ export default function CartPage() {
               }
             />
           </dl>
+
+          <Meander className="my-4" />
+
+          <div>
+            <label
+              htmlFor="discount"
+              className="inscription mb-2 block text-[0.6rem] text-cyan/70"
+            >
+              Discount code
+            </label>
+            <div className="flex gap-2">
+              <input
+                id="discount"
+                value={codeInput}
+                onChange={(event) => setCodeInput(event.target.value)}
+                placeholder="Enter a code"
+                className="min-w-0 flex-1 rounded-md border border-edge bg-night px-3 py-2 text-sm uppercase text-ink placeholder:normal-case placeholder:text-faint focus:border-cyan focus:outline-none"
+              />
+              <button
+                type="button"
+                disabled={applying}
+                onClick={async () => {
+                  setApplying(true);
+                  await applyDiscount(codeInput);
+                  setApplying(false);
+                }}
+                className="inscription rounded-md border border-edge-bright px-4 py-2 text-[0.62rem] text-ink transition-colors hover:border-cyan hover:text-cyan disabled:opacity-50"
+              >
+                {applying ? "…" : "Apply"}
+              </button>
+            </div>
+            {cart.discountError ? (
+              <p className="mt-2 text-xs text-danger">{cart.discountError}</p>
+            ) : cart.discountCents > 0 ? (
+              <p className="mt-2 text-xs text-ok">Code applied.</p>
+            ) : null}
+          </div>
 
           <Meander className="my-4" />
 

@@ -47,7 +47,7 @@ const stripePromise: Promise<Stripe | null> | null = PUBLISHABLE_KEY
   : null;
 
 export default function CheckoutPage() {
-  const { cart, user, loading } = useSession();
+  const { cart, user, loading, discountCode } = useSession();
   const router = useRouter();
 
   const [checkout, setCheckout] = useState<CheckoutResult | null>(null);
@@ -90,6 +90,9 @@ export default function CheckoutPage() {
         json: {
           email: String(form.get("email") ?? ""),
           shippingAddress: address,
+          // Re-validated server-side against the live catalogue price; this is
+          // a hint, never an authority on what the discount is worth.
+          discountCode: discountCode || null,
         },
       });
       setCheckout(result);
@@ -242,6 +245,12 @@ export default function CheckoutPage() {
                 </li>
               ))}
             </ul>
+            {cart.discountCents > 0 ? (
+              <p className="mt-3 flex justify-between text-sm text-ok">
+                <span>Discount{cart.discountCode ? ` (${cart.discountCode})` : ""}</span>
+                <span>−{formatMoney(cart.discountCents, cart.currency)}</span>
+              </p>
+            ) : null}
             <Meander className="my-4" />
             <div className="flex items-baseline justify-between">
               <span className="inscription text-[0.7rem] text-marble">Total</span>
