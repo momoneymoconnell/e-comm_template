@@ -150,7 +150,12 @@ function Hero() {
           left an obvious dead gap between the buildings and the first dots. */}
       <div className="relative">
         <div aria-hidden className="horizon-grid" />
-        <div className="absolute inset-x-0 bottom-[26px]">
+        {/* pointer-events-none is load-bearing, not decoration. This box is the
+            full width of the hero and its height grows with the viewport, so on
+            a wide monitor its top edge rises past the call-to-action buttons and
+            silently swallows their clicks. The Skyline's own wrapper opts out
+            too; both are needed, since this one is the outer box. */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-[26px]">
           <Skyline />
         </div>
       </div>
